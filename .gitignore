@@ -32,3 +32,4 @@ tmp_*.png
 # Sistema
 .DS_Store
 .env
+.claude/
