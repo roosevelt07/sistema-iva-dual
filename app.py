@@ -627,12 +627,8 @@ elif modo == MODOS[1]:
         # Bloco 7 — Alertas
         if resultado.alertas:
             st.write("")
-            alerta_senado = next((a for a in resultado.alertas if "Senado" in a), None)
-            if alerta_senado:
-                st.warning(alerta_senado, icon="⚠️")
             for alerta in resultado.alertas:
-                if alerta != alerta_senado:
-                    st.warning(alerta, icon="⚠️")
+                st.warning(alerta, icon="⚠️")
 
         # Bloco 8 — Memória de cálculo
         with st.expander("Memória de cálculo", expanded=False):
