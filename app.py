@@ -675,18 +675,21 @@ else:
         docx_bytes = st.session_state.get("docx_bytes")
         pptx_bytes = st.session_state.get("pptx_bytes")
 
+        cliente_slug = nome_cliente.strip().replace(" ", "_").lower() or "cliente"
+        data_slug = str(data_relatorio).replace("-", "")
+
         if docx_bytes:
             st.download_button(
-                "Baixar Word (.docx)",
+                "⬇️ Baixar Word (.docx)",
                 data=docx_bytes,
-                file_name="analise_iva.docx",
+                file_name=f"analise_iva_{cliente_slug}_{data_slug}.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
         if pptx_bytes:
             st.download_button(
-                "Baixar PPT (.pptx)",
+                "⬇️ Baixar PPT (.pptx)",
                 data=pptx_bytes,
-                file_name="analise_iva.pptx",
+                file_name=f"analise_iva_{cliente_slug}_{data_slug}.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             )
 
