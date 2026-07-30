@@ -1,10 +1,28 @@
 import os
+import sys
 from datetime import date
 from decimal import Decimal
 
 import streamlit as st
 from loguru import logger
 from pydantic import ValidationError
+
+# Remove handler padrão e reconfigura com arquivo rotativo
+logger.remove()
+logger.add(
+    sys.stderr,
+    level="WARNING",
+    format="{time:HH:mm:ss} | {level} | {message}",
+)
+logger.add(
+    "logs/analise_iva.log",
+    level="DEBUG",
+    rotation="10 MB",      # novo arquivo a cada 10MB
+    retention="7 days",    # mantém logs de 7 dias
+    compression="zip",     # comprime logs antigos
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{line} | {message}",
+    encoding="utf-8",
+)
 
 st.set_page_config(
     page_title="Analisador IVA",
