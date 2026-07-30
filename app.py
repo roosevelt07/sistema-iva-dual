@@ -397,11 +397,11 @@ elif modo == MODOS[1] and analisar_clicado:
             compras_fornecedor_isento=Decimal(str(compras_isento)),
             aliquota_ibs_cbs_das_fornecedor=Decimal(str(aliquota_das / 100)),
         )
-        if icms_input not in (None, 0.0):
+        if icms_input is not None:
             kwargs["icms_aliquota_efetiva"] = Decimal(str(icms_input / 100))
-        if iss_input not in (None, 0.0):
+        if iss_input is not None:
             kwargs["iss_aliquota_efetiva"] = Decimal(str(iss_input / 100))
-        if pis_cofins_input not in (None, 0.0):
+        if pis_cofins_input is not None:
             kwargs["pis_cofins_aliquota_efetiva"] = Decimal(str(pis_cofins_input / 100))
 
         dados = DadosCliente(**kwargs)
