@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+logs/
+
+# Arquivos temporários de exportação
+*.docx
+*.pptx
+tmp_*.png
+
+# Sistema
+.DS_Store
+.env
