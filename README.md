@@ -14,7 +14,7 @@ crédito de entrada e cronograma de transição 2026-2033.
 
 ## Como rodar
 ```bash
-pip install -r requirements.txt
+pip install -e .
 PYTHONPATH=. streamlit run app.py
 ```
 
