@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 from datetime import date
 from decimal import Decimal
 
@@ -45,11 +46,15 @@ from src.analise.graficos import (
 )
 from src.analise.formatters import fmt_moeda, fmt_percentual
 from src.analise.narrativa import gerar_narrativa
+from src.parser.normalizador import DadosNormalizados, normalizar_extrato
+from src.parser.pgdas_parser import ExtratoPGDAS, PGDASParserError, parsear_pgdas
+from src.simples.das_calculado import calcular_das_multiplas_atividades
+from src.simples.dentro_fora import calcular_dentro_fora_extrato
 
 # ---------------------------------------------------------------------------
 # Mapeamentos e constantes
 # ---------------------------------------------------------------------------
-MODOS = ["📊 Sistema Atual", "🧮 Analisador IVA", "📄 Relatório"]
+MODOS = ["📊 Sistema Atual", "🧮 Analisador IVA", "📥 Extrato PGDAS-D", "📄 Relatório"]
 
 REGIME_MAP = {
     "Simples Nacional": Regime.SIMPLES,
@@ -343,9 +348,47 @@ with st.sidebar:
         analisar_clicado = st.button("Analisar", key="btn_analisar_iva")
 
     # ------------------------------------------------------------------
-    # MODO 3 — Relatório
+    # MODO 3 — Extrato PGDAS-D
     # ------------------------------------------------------------------
-    else:
+    elif modo == MODOS[2]:
+        st.markdown("**Upload do extrato**")
+        arquivo_pdf = st.file_uploader(
+            "Extrato PGDAS-D (PDF)",
+            type=["pdf"],
+            key="upload_pgdas",
+            help="Extrato gerado no portal do Simples Nacional (PGDAS-D).",
+        )
+
+        st.markdown("**Complemento — o operador informa:**")
+        ano_pgdas = st.selectbox(
+            "Ano de referência IBS/CBS", ANOS, index=1, key="ano_pgdas",
+        )
+        percentual_b2b_pgdas = st.slider("% vendas B2B", 0, 100, 50, key="b2b_pgdas")
+
+        st.markdown("**Compras (para crédito de entrada)**")
+        compras_normal_pgdas = st.number_input(
+            "Fornecedores regime normal (R$)",
+            min_value=0.0, step=1000.0, format="%.2f", key="comp_normal_pgdas",
+        )
+        compras_simples_pgdas = st.number_input(
+            "Fornecedores Simples (R$)",
+            min_value=0.0, step=1000.0, format="%.2f", key="comp_simples_pgdas",
+        )
+        compras_isento_pgdas = st.number_input(
+            "Fornecedores isentos (R$)",
+            min_value=0.0, step=1000.0, format="%.2f", key="comp_isento_pgdas",
+        )
+
+        setor_pgdas_label = st.selectbox(
+            "Setor (para redução Art. 128)", list(SETOR_MAP.keys()), key="setor_pgdas",
+        )
+
+        processar_pgdas = st.button("Processar Extrato", key="btn_pgdas")
+
+    # ------------------------------------------------------------------
+    # MODO 4 — Relatório
+    # ------------------------------------------------------------------
+    elif modo == MODOS[3]:
         nome_cliente = ""
         data_relatorio = date.today()
         observacoes = ""
@@ -446,7 +489,54 @@ elif modo == MODOS[1] and analisar_clicado:
             )
             st.session_state["resultado"] = None
 
-elif modo == MODOS[2]:
+elif modo == MODOS[2] and processar_pgdas:
+    if arquivo_pdf is None:
+        st.session_state["erro_pgdas"] = "Nenhum arquivo carregado."
+    else:
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp.write(arquivo_pdf.read())
+                tmp_path = tmp.name
+
+            extrato: ExtratoPGDAS = parsear_pgdas(tmp_path)
+            os.unlink(tmp_path)
+
+            dados_norm: DadosNormalizados = normalizar_extrato(
+                extrato=extrato,
+                percentual_b2b=Decimal(str(percentual_b2b_pgdas / 100)),
+                compras_regime_normal=Decimal(str(compras_normal_pgdas)),
+                compras_simples=Decimal(str(compras_simples_pgdas)),
+                compras_isento=Decimal(str(compras_isento_pgdas)),
+                ano_referencia=int(ano_pgdas),
+                setor=SETOR_MAP[setor_pgdas_label],
+            )
+
+            ctx = to_contexto(dados_norm.dados_cliente)
+            resultado_pgdas = analisar(ctx)
+            das_real = calcular_das_multiplas_atividades(extrato.rbt12, dados_norm.atividades)
+            dentro_fora = calcular_dentro_fora_extrato(dados_norm, extrato.rbt12)
+
+            st.session_state["extrato"] = extrato
+            st.session_state["dados_norm"] = dados_norm
+            st.session_state["resultado_pgdas"] = resultado_pgdas
+            st.session_state["das_real"] = das_real
+            st.session_state["dentro_fora"] = dentro_fora
+            st.session_state["narrativa_pgdas"] = gerar_narrativa(resultado_pgdas)
+            st.session_state["erro_pgdas"] = None
+            st.session_state["resultado"] = resultado_pgdas  # alimenta o Modo Relatório
+
+        except PGDASParserError as exc:
+            logger.warning("Falha ao parsear PGDAS: {}", exc)
+            st.session_state["erro_pgdas"] = f"Não foi possível ler o extrato: {exc}"
+        except ValidationError as exc:
+            erros = [f"{e['loc'][0]}: {e['msg']}" for e in exc.errors()]
+            st.session_state["erro_pgdas"] = "Dados inválidos: " + " | ".join(erros)
+            logger.warning("ValidationError no Modo 3: {}", exc.errors())
+        except Exception:
+            logger.exception("Erro inesperado no Modo 3")
+            st.session_state["erro_pgdas"] = "Erro interno inesperado."
+
+elif modo == MODOS[3]:
     resultado_para_relatorio = st.session_state.get("resultado")
     if resultado_para_relatorio is not None:
         if gerar_word_clicado:
@@ -663,7 +753,181 @@ elif modo == MODOS[1]:
             st.table(detalhes_b)
 
 # ------------------------------------------------------------------
-# MODO 3 — Área principal
+# MODO 3 — Extrato PGDAS-D — Área principal
+# ------------------------------------------------------------------
+elif modo == MODOS[2]:
+    erro_pgdas = st.session_state.get("erro_pgdas")
+    resultado_pgdas = st.session_state.get("resultado_pgdas")
+    extrato = st.session_state.get("extrato")
+    das_real = st.session_state.get("das_real")
+    dentro_fora = st.session_state.get("dentro_fora")
+    dados_norm = st.session_state.get("dados_norm")
+
+    if erro_pgdas:
+        st.error(erro_pgdas)
+    elif resultado_pgdas is None:
+        st.markdown(
+            '<div class="instrucao-box">Carregue o extrato PGDAS-D na barra '
+            "lateral e clique em <strong>Processar Extrato</strong>.</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        # Cabeçalho com dados do cliente extraídos automaticamente
+        st.markdown(f"### {extrato.razao_social}")
+        col_info1, col_info2, col_info3, col_info4 = st.columns(4)
+        col_info1.metric("CNPJ", extrato.cnpj_basico)
+        col_info2.metric("UF", extrato.uf)
+        col_info3.metric("Período", extrato.periodo_apuracao)
+        col_info4.metric("RBT12", fmt_moeda(extrato.rbt12))
+
+        st.divider()
+
+        # Bloco 1 — DAS Real (calculado pelo módulo simples)
+        st.subheader("DAS Real por Atividade")
+        cols_das = st.columns(len(das_real.atividades) + 1)
+        for i, (nome, valor) in enumerate(das_real.das_por_atividade.items()):
+            cols_das[i].metric(
+                nome[:30] + "..." if len(nome) > 30 else nome,
+                fmt_moeda(valor),
+            )
+        cols_das[-1].metric("DAS Total", fmt_moeda(das_real.das_total))
+
+        st.divider()
+
+        # Bloco 2 — Por dentro vs Por fora
+        st.subheader("IBS/CBS: Por dentro vs Por fora")
+        col_d, col_f = st.columns(2)
+
+        classe_dentro = "card-migrar" if dentro_fora.vantajoso == "por_dentro" else "card-manter"
+        classe_fora = "card-migrar" if dentro_fora.vantajoso == "por_fora" else "card-manter"
+
+        with col_d:
+            st.markdown(
+                f'<div class="{classe_dentro}"><strong>Por dentro</strong><br>'
+                f"Tributo: {fmt_moeda(dentro_fora.tributo_por_dentro)}<br>"
+                f"Base: {fmt_moeda(dentro_fora.base_por_dentro)}</div>",
+                unsafe_allow_html=True,
+            )
+            st.caption("IBS_CBS = Preço × alíquota / (1 + alíquota)")
+
+        with col_f:
+            st.markdown(
+                f'<div class="{classe_fora}"><strong>Por fora</strong><br>'
+                f"Tributo: {fmt_moeda(dentro_fora.tributo_por_fora)}<br>"
+                f"Base: {fmt_moeda(dentro_fora.base_por_fora)}</div>",
+                unsafe_allow_html=True,
+            )
+            st.caption("IBS_CBS = Preço × alíquota")
+
+        st.metric("Economia anual estimada", fmt_moeda(dentro_fora.economia_anual_estimada))
+
+        # grafico_dentro_fora espera "dentro"/"fora" literais, não
+        # "por_dentro"/"por_fora" — traduzido aqui antes de montar o dict.
+        vantajoso_grafico = {"por_dentro": "dentro", "por_fora": "fora"}.get(
+            dentro_fora.vantajoso, "equivalente"
+        )
+        st.plotly_chart(
+            grafico_dentro_fora(
+                {
+                    "dentro": {
+                        "base": dentro_fora.base_por_dentro,
+                        "tributo": dentro_fora.tributo_por_dentro,
+                    },
+                    "fora": {
+                        "base": dentro_fora.base_por_fora,
+                        "tributo": dentro_fora.tributo_por_fora,
+                    },
+                    "vantajoso": vantajoso_grafico,
+                }
+            ),
+            use_container_width=True,
+        )
+
+        st.divider()
+
+        # Bloco 3 — Comparativo IBS/CBS (reusa motor existente)
+        st.subheader("Comparativo IBS/CBS vs Sistema Atual")
+        cenario_a = resultado_pgdas.cenarios.cenario_a
+        cenario_b = resultado_pgdas.cenarios.cenario_b
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric(
+            "Carga Atual", fmt_moeda(cenario_a.carga_liquida),
+            f"{fmt_percentual(cenario_a.aliquota_efetiva * 100)} efetivo",
+            delta_color="off",
+        )
+        col2.metric(
+            "Carga IVA Regular", fmt_moeda(cenario_b.carga_liquida),
+            f"{fmt_percentual(cenario_b.aliquota_efetiva * 100)} efetivo",
+            delta_color="off",
+        )
+        col3.metric(
+            "Economia/Aumento",
+            fmt_moeda(abs(resultado_pgdas.delta_absoluto)),
+            fmt_percentual(abs(resultado_pgdas.delta_percentual)),
+            delta_color="normal" if resultado_pgdas.delta_absoluto > 0 else "inverse",
+        )
+
+        # Card recomendação
+        if resultado_pgdas.recomendacao == "MIGRAR_REGIME_REGULAR":
+            st.markdown(
+                '<div class="card-migrar">✓ Migrar para Regime Regular</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="card-manter">→ Manter Regime Atual</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Gráficos existentes reutilizados
+        col_g1, col_g2 = st.columns([3, 2])
+        with col_g1:
+            st.plotly_chart(grafico_pizzas_comparativo(resultado_pgdas), use_container_width=True)
+        with col_g2:
+            st.plotly_chart(grafico_gauge_aliquota(resultado_pgdas), use_container_width=True)
+        st.plotly_chart(grafico_barra_comparativo(resultado_pgdas), use_container_width=True)
+        # resultado_pgdas.ctx (não uma variável "ctx" solta) — evita
+        # NameError em reruns sem novo clique no botão de processar.
+        st.plotly_chart(
+            grafico_evolucao_transicao(resultado_pgdas.ctx), use_container_width=True
+        )
+
+        # Narrativa
+        st.markdown(
+            f'<div class="narrativa-box">{st.session_state.get("narrativa_pgdas", "")}</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Alertas — normalizador + motor
+        alertas = dados_norm.alertas_normalizacao + resultado_pgdas.alertas
+        for alerta in alertas:
+            st.warning(alerta, icon="⚠️")
+
+        # Observações por dentro vs por fora
+        with st.expander("Detalhes por dentro vs por fora", expanded=False):
+            for obs in dentro_fora.observacoes:
+                st.info(obs)
+
+        # Memória de cálculo
+        with st.expander("Memória de cálculo", expanded=False):
+            st.markdown(f"**Cenário A — {cenario_a.nome}**")
+            detalhes_a = {
+                k: fmt_moeda(v)
+                for k, v in cenario_a.detalhes.items()
+                if isinstance(v, Decimal)
+            }
+            st.table(detalhes_a)
+            st.markdown(f"**Cenário B — {cenario_b.nome}**")
+            detalhes_b = {
+                k: fmt_moeda(v)
+                for k, v in cenario_b.detalhes.items()
+                if isinstance(v, Decimal)
+            }
+            st.table(detalhes_b)
+
+# ------------------------------------------------------------------
+# MODO 4 — Área principal
 # ------------------------------------------------------------------
 else:
     resultado_iva = st.session_state.get("resultado")
