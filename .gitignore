@@ -33,3 +33,8 @@ tmp_*.png
 .DS_Store
 .env
 .claude/
+
+# PDFs de fixtures — bloqueia por padrão para não commitar extratos reais
+# por engano; a fixture fictícia usada nos testes é liberada explicitamente.
+tests/fixtures/*.pdf
+!tests/fixtures/pgdas_exemplo.pdf

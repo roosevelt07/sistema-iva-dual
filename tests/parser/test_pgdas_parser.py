@@ -1,8 +1,11 @@
 """Testes do módulo `parser.pgdas_parser`.
 
-Testes 1-18 usam o PDF real em `tests/fixtures/pgdas_exemplo.pdf`.
-Teste 19 (estrutura essencial ausente) usa `parsear_texto_pgdas` com uma
-string sem a linha de CNPJ, sem precisar de um segundo PDF malformado.
+Testes 1-18 usam `tests/fixtures/pgdas_exemplo.pdf` — um PDF gerado
+sinteticamente (dados 100% fictícios: CNPJ, razão social e valores
+inventados), com a mesma estrutura de seções/rótulos do extrato PGDAS-D
+real, para não versionar dado sensível de cliente. Teste 19 (estrutura
+essencial ausente) usa `parsear_texto_pgdas` com uma string sem a linha de
+CNPJ, sem precisar de um segundo PDF malformado.
 """
 
 import os
@@ -25,23 +28,23 @@ def extrato():
 
 
 def test_cnpj_basico(extrato):
-    assert extrato.cnpj_basico == "16.682.120"
+    assert extrato.cnpj_basico == "11.222.333"
 
 
 def test_razao_social_contem_nome(extrato):
-    assert "S & L LOCACOES" in extrato.razao_social
+    assert "EMPRESA FICTICIA TESTE" in extrato.razao_social
 
 
 def test_periodo_apuracao(extrato):
-    assert extrato.periodo_apuracao == "04/2026"
+    assert extrato.periodo_apuracao == "01/2026"
 
 
 def test_rpa(extrato):
-    assert extrato.rpa == D("139182.41")
+    assert extrato.rpa == D("100000.00")
 
 
 def test_rbt12(extrato):
-    assert extrato.rbt12 == D("1502383.95")
+    assert extrato.rbt12 == D("900000.00")
 
 
 def test_fator_r_nao_se_aplica_vira_none(extrato):
@@ -57,7 +60,7 @@ def test_tres_blocos_de_atividade(extrato):
 
 
 def test_receita_bloco_0(extrato):
-    assert extrato.blocos_atividade[0].receita_bruta_informada == D("54392.65")
+    assert extrato.blocos_atividade[0].receita_bruta_informada == D("50000.00")
 
 
 def test_bloco_1_com_substituicao_tributaria(extrato):
@@ -77,15 +80,15 @@ def test_bloco_1_tributos_monofasicos(extrato):
 
 
 def test_das_total(extrato):
-    assert extrato.das_total == D("14477.63")
+    assert extrato.das_total == D("4470.00")
 
 
 def test_das_icms(extrato):
-    assert extrato.das_icms == D("1676.82")
+    assert extrato.das_icms == D("600.00")
 
 
 def test_das_iss(extrato):
-    assert extrato.das_iss == D("2722.90")
+    assert extrato.das_iss == D("700.00")
 
 
 def test_soma_totais_dos_blocos_aproxima_das_total(extrato):
