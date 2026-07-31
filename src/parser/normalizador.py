@@ -4,6 +4,7 @@ cálculo de DAS multi-atividade.
 Só converte e valida — nenhum cálculo tributário acontece aqui.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import List, Optional
@@ -64,7 +65,10 @@ def normalizar_extrato(
         )
         for bloco in extrato.blocos_atividade
     ]
-    anexo_predominante = max(atividades, key=lambda a: a.receita_atividade).anexo
+    receita_por_anexo: dict = defaultdict(lambda: D("0"))
+    for a in atividades:
+        receita_por_anexo[a.anexo] += a.receita_atividade
+    anexo_predominante = max(receita_por_anexo, key=lambda k: receita_por_anexo[k])
 
     dados_cliente = DadosCliente(
         faturamento_anual=extrato.rbt12,
