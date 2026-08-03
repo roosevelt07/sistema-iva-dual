@@ -1,8 +1,8 @@
 """Exportação do relatório de análise em Word (.docx)."""
 
 import io
-import os
 from decimal import Decimal
+from pathlib import Path
 
 try:
     from docx import Document
@@ -19,7 +19,10 @@ from src.analise.decisao import ResultadoAnalise
 from src.analise.formatters import fmt_moeda
 from src.analise.narrativa import gerar_narrativa
 
-_VERDE = RGBColor(0x2E, 0x8B, 0x57) if DOCX_DISPONIVEL else None
+LOGO_PATH = Path(__file__).parent.parent.parent / "assets" / "logo.png"
+
+_VERDE = RGBColor(0x00, 0xB2, 0xA9) if DOCX_DISPONIVEL else None
+_VERDE_HEX = "00B2A9"
 
 
 def _detalhes_monetarios(detalhes: dict) -> dict:
@@ -32,18 +35,49 @@ def _titulo_verde(doc, texto, level):
     return heading
 
 
-def _adicionar_borda_paragrafo(paragrafo) -> None:
-    """Borda verde ao redor do parágrafo (recomendação em destaque)."""
+def _adicionar_borda_paragrafo(paragrafo, lados=("top", "left", "bottom", "right")) -> None:
+    """Borda teal ao redor (ou só em alguns lados) do parágrafo."""
     p_pr = paragrafo._p.get_or_add_pPr()
     borda = OxmlElement("w:pBdr")
-    for lado in ("top", "left", "bottom", "right"):
+    for lado in lados:
         elemento = OxmlElement(f"w:{lado}")
         elemento.set(qn("w:val"), "single")
         elemento.set(qn("w:sz"), "12")
-        elemento.set(qn("w:color"), "2E8B57")
+        elemento.set(qn("w:color"), _VERDE_HEX)
         elemento.set(qn("w:space"), "4")
         borda.append(elemento)
     p_pr.append(borda)
+
+
+def _configurar_cabecalho(doc, nome_cliente: str) -> None:
+    header = doc.sections[0].header
+    p_logo = header.paragraphs[0]
+    p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    if LOGO_PATH.exists():
+        p_logo.add_run().add_picture(str(LOGO_PATH), height=Inches(0.5))
+
+    p_linha = header.add_paragraph()
+    _adicionar_borda_paragrafo(p_linha, lados=("bottom",))
+
+
+def _configurar_rodape(doc, resultado: ResultadoAnalise) -> None:
+    rodape = doc.sections[0].footer.paragraphs[0]
+    rodape.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    extrato = getattr(resultado, "extrato", None)
+    cnpj = getattr(extrato, "cnpj_basico", None)
+    pa = getattr(extrato, "periodo_apuracao", None)
+    if cnpj or pa:
+        partes = []
+        if cnpj:
+            partes.append(f"CNPJ: {cnpj}")
+        if pa:
+            partes.append(f"PA: {pa}")
+        rodape.add_run(" | ".join(partes) + "  —  ").italic = True
+
+    rodape.add_run(
+        "Simulação baseada na LC 214/2025 — valores estimados."
+    ).italic = True
 
 
 def gerar_word(resultado: ResultadoAnalise, nome_cliente: str, data_relatorio, observacoes: str = "") -> bytes:
@@ -55,15 +89,24 @@ def gerar_word(resultado: ResultadoAnalise, nome_cliente: str, data_relatorio, o
     cenario_b = resultado.cenarios.cenario_b
 
     doc = Document()
+    _configurar_cabecalho(doc, nome_cliente)
+    _configurar_rodape(doc, resultado)
 
     # 1. Capa
-    if os.path.exists("logo.png"):
-        doc.add_picture("logo.png", width=Inches(1.5))
+    if LOGO_PATH.exists():
+        p_logo_capa = doc.add_paragraph()
+        p_logo_capa.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_logo_capa.add_run().add_picture(str(LOGO_PATH), width=Inches(1.5))
     titulo = doc.add_heading("Análise IVA Dual — LC 214/2025", level=0)
     titulo.runs[0].font.color.rgb = _VERDE
     titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p = doc.add_paragraph(f"Cliente: {nome_cliente or '—'}")
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    extrato = getattr(resultado, "extrato", None)
+    cnpj = getattr(extrato, "cnpj_basico", None)
+    if cnpj:
+        p = doc.add_paragraph(f"CNPJ: {cnpj}")
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p = doc.add_paragraph(f"Data: {data_relatorio}")
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
@@ -75,7 +118,7 @@ def gerar_word(resultado: ResultadoAnalise, nome_cliente: str, data_relatorio, o
     _titulo_verde(doc, "Comparativo de carga tributária", level=1)
     tabela = doc.add_table(rows=1, cols=4)
     tabela.style = "Light Grid Accent 1"
-    for i, texto in enumerate(["Item", "Carga Atual (R$)", "Carga IVA (R$)", "Diferença (R$)"]):
+    for i, texto in enumerate(["Item", "Atual (R$)", "IVA (R$)", "Economia (R$)"]):
         tabela.rows[0].cells[i].text = texto
     linhas = [
         ("Carga bruta", cenario_a.carga_bruta, cenario_b.carga_bruta),
@@ -89,7 +132,28 @@ def gerar_word(resultado: ResultadoAnalise, nome_cliente: str, data_relatorio, o
         linha[2].text = fmt_moeda(valor_b)
         linha[3].text = fmt_moeda(valor_a - valor_b)
 
-    # 4. Recomendação
+    # 4. Atividades declaradas
+    _titulo_verde(doc, "Atividades declaradas", level=1)
+    blocos_atividade = getattr(resultado.ctx, "blocos_atividade", None)
+    if blocos_atividade:
+        tabela_ativ = doc.add_table(rows=1, cols=5)
+        tabela_ativ.style = "Light Grid Accent 1"
+        for i, texto in enumerate(["Atividade", "Anexo", "Receita", "DAS", "Obs."]):
+            tabela_ativ.rows[0].cells[i].text = texto
+        for bloco in blocos_atividade:
+            linha = tabela_ativ.add_row().cells
+            linha[0].text = getattr(bloco, "nome", "")
+            linha[1].text = str(getattr(bloco, "anexo", ""))
+            linha[2].text = fmt_moeda(getattr(bloco, "receita_atividade", Decimal("0")))
+            linha[3].text = fmt_moeda(getattr(bloco, "das", Decimal("0")))
+            linha[4].text = getattr(bloco, "observacao", "")
+        anexo_predominante = getattr(resultado, "anexo_predominante", None)
+        if anexo_predominante:
+            doc.add_paragraph(f"Anexo predominante: {anexo_predominante}")
+    else:
+        doc.add_paragraph("Dados disponíveis no Modo 3 — Extrato PGDAS-D.")
+
+    # 5. Recomendação
     _titulo_verde(doc, "Recomendação", level=1)
     p = doc.add_paragraph()
     run = p.add_run(
@@ -102,7 +166,17 @@ def gerar_word(resultado: ResultadoAnalise, nome_cliente: str, data_relatorio, o
     run.font.color.rgb = _VERDE
     _adicionar_borda_paragrafo(p)
 
-    # 5. Memória de cálculo
+    # 6. Alertas e ressalvas
+    if resultado.alertas:
+        _titulo_verde(doc, "Alertas e ressalvas", level=1)
+        for alerta in resultado.alertas:
+            doc.add_paragraph(alerta, style="List Bullet")
+
+    if observacoes:
+        _titulo_verde(doc, "Observações adicionais", level=1)
+        doc.add_paragraph(observacoes)
+
+    # 7. Memória de cálculo
     _titulo_verde(doc, "Memória de cálculo", level=1)
     for cenario in (cenario_a, cenario_b):
         doc.add_heading(cenario.nome, level=2)
@@ -115,21 +189,6 @@ def gerar_word(resultado: ResultadoAnalise, nome_cliente: str, data_relatorio, o
             linha = tabela_mem.add_row().cells
             linha[0].text = chave
             linha[1].text = fmt_moeda(valor)
-
-    # 6. Alertas e ressalvas
-    if resultado.alertas:
-        _titulo_verde(doc, "Alertas e ressalvas", level=1)
-        for alerta in resultado.alertas:
-            doc.add_paragraph(alerta, style="List Bullet")
-
-    if observacoes:
-        _titulo_verde(doc, "Observações adicionais", level=1)
-        doc.add_paragraph(observacoes)
-
-    # 7. Rodapé
-    rodape = doc.sections[0].footer.paragraphs[0]
-    rodape.text = "Simulação baseada na LC 214/2025 — valores estimados."
-    rodape.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     buffer = io.BytesIO()
     doc.save(buffer)
