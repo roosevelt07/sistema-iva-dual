@@ -49,7 +49,7 @@ from src.analise.narrativa import gerar_narrativa
 from src.parser.normalizador import DadosNormalizados, normalizar_extrato
 from src.parser.pgdas_parser import ExtratoPGDAS, PGDASParserError, parsear_pgdas
 from src.simples.das_calculado import calcular_das_multiplas_atividades
-from src.simples.dentro_fora import calcular_dentro_fora_extrato
+from src.simples.dentro_fora import ALIQUOTA_ALERTA_MIGRACAO, calcular_dentro_fora_extrato
 
 # ---------------------------------------------------------------------------
 # Mapeamentos e constantes
@@ -92,6 +92,49 @@ PIS_COFINS_INDIVIDUAL = {
     Regime.PRESUMIDO: (0.65, 3.00),
     Regime.REAL: (1.65, 7.60),
 }
+
+# Labels em português para as chaves internas de `cenario.detalhes`,
+# usadas na Memória de cálculo. Cobre as chaves reais dos 3 regimes
+# (src/analise/regimes/{simples,presumido,real}.py) + cenário B
+# compartilhado (_cenario_b_regime_regular). carga_bruta/carga_liquida/
+# credito_aproveitado são campos de CenarioUnico, não chaves de
+# `.detalhes` — mantidos aqui só por completude, nunca aparecem nesta
+# tabela hoje.
+LABELS_PT = {
+    "ibs_cbs_das":            "IBS/CBS no DAS (Simples)",
+    "credito_entrada":        "Crédito de entrada",
+    "ibs_cbs_bruto":          "IBS/CBS bruto (regime regular)",
+    "credito_regime_normal":  "Crédito — fornecedores regime normal",
+    "credito_simples":        "Crédito — fornecedores Simples",
+    "pis_cofins":             "PIS/COFINS",
+    "pis_cofins_bruto":       "PIS/COFINS",
+    "credito_pis_cofins":     "Crédito PIS/COFINS",
+    "icms":                   "ICMS",
+    "iss":                    "ISS",
+    "reducao_icms_iss_aplicada": "Redução ICMS/ISS aplicada",
+    "carga_bruta":            "Carga bruta",
+    "carga_liquida":          "Carga líquida",
+    "credito_aproveitado":    "Crédito aproveitado",
+}
+
+
+def _delta_economia(delta_absoluto: Decimal, delta_percentual: Decimal):
+    """(delta_texto, delta_color) para st.metric — economia = verde/seta
+    para baixo, aumento = vermelho/seta para cima, zero = sem seta.
+
+    A direção da seta do st.metric é decidida só pelo sinal do texto de
+    delta (começa com "-" => seta para baixo), nunca por delta_color —
+    por isso a economia (delta > 0) precisa de um texto com "-" à frente
+    combinado com delta_color="inverse" para sair verde com seta para
+    baixo. delta_color="off" sozinho não remove a seta em zero — só
+    remove a seta de fato passar delta=None.
+    """
+    if delta_absoluto > 0:
+        return f"-{fmt_percentual(abs(delta_percentual))}", "inverse"
+    if delta_absoluto < 0:
+        return fmt_percentual(abs(delta_percentual)), "inverse"
+    return None, "off"
+
 
 def _calcular_por_dentro_fora(faturamento: Decimal, aliquota: Decimal) -> dict:
     # Por fora — padrão LC 214
@@ -660,16 +703,11 @@ elif modo == MODOS[1]:
             f"{fmt_percentual(cenario_b.aliquota_efetiva * 100)} efetivo",
             delta_color="off",
         )
-        if resultado.delta_absoluto > 0:
-            cor_delta = "normal"
-        elif resultado.delta_absoluto < 0:
-            cor_delta = "inverse"
-        else:
-            cor_delta = "off"
+        delta_texto, cor_delta = _delta_economia(resultado.delta_absoluto, resultado.delta_percentual)
         col3.metric(
             "Economia/Aumento",
             fmt_moeda(abs(resultado.delta_absoluto)),
-            fmt_percentual(abs(resultado.delta_percentual)),
+            delta_texto,
             delta_color=cor_delta,
         )
 
@@ -742,13 +780,15 @@ elif modo == MODOS[1]:
         with st.expander("Memória de cálculo", expanded=False):
             st.markdown(f"**Cenário A — {cenario_a.nome}**")
             detalhes_a = {
-                k: fmt_moeda(v) for k, v in cenario_a.detalhes.items() if isinstance(v, Decimal)
+                LABELS_PT.get(k, k.replace("_", " ").title()): fmt_moeda(v)
+                for k, v in cenario_a.detalhes.items() if isinstance(v, Decimal)
             }
             st.table(detalhes_a)
 
             st.markdown(f"**Cenário B — {cenario_b.nome}**")
             detalhes_b = {
-                k: fmt_moeda(v) for k, v in cenario_b.detalhes.items() if isinstance(v, Decimal)
+                LABELS_PT.get(k, k.replace("_", " ").title()): fmt_moeda(v)
+                for k, v in cenario_b.detalhes.items() if isinstance(v, Decimal)
             }
             st.table(detalhes_b)
 
@@ -861,11 +901,14 @@ elif modo == MODOS[2]:
             f"{fmt_percentual(cenario_b.aliquota_efetiva * 100)} efetivo",
             delta_color="off",
         )
+        delta_texto_pgdas, cor_delta_pgdas = _delta_economia(
+            resultado_pgdas.delta_absoluto, resultado_pgdas.delta_percentual
+        )
         col3.metric(
             "Economia/Aumento",
             fmt_moeda(abs(resultado_pgdas.delta_absoluto)),
-            fmt_percentual(abs(resultado_pgdas.delta_percentual)),
-            delta_color="normal" if resultado_pgdas.delta_absoluto > 0 else "inverse",
+            delta_texto_pgdas,
+            delta_color=cor_delta_pgdas,
         )
 
         # Card recomendação
@@ -904,23 +947,52 @@ elif modo == MODOS[2]:
         for alerta in alertas:
             st.warning(alerta, icon="⚠️")
 
-        # Observações por dentro vs por fora
+        # Observações por dentro vs por fora — reconstruídas a partir dos
+        # campos Decimal de `dentro_fora` (fmt_moeda/fmt_percentual), não
+        # de `dentro_fora.observacoes` (strings pré-formatadas sem passar
+        # por fmt_moeda, com "|" como separador).
         with st.expander("Detalhes por dentro vs por fora", expanded=False):
-            for obs in dentro_fora.observacoes:
-                st.info(obs)
+            st.info(f"Tributo por fora: {fmt_moeda(dentro_fora.tributo_por_fora)}")
+            st.info(f"Tributo por dentro: {fmt_moeda(dentro_fora.tributo_por_dentro)}")
+            st.info(
+                f"Diferença: {fmt_moeda(dentro_fora.diferenca_tributo)} "
+                f"({fmt_percentual(dentro_fora.diferenca_percentual)})"
+            )
+            if dentro_fora.vantajoso == "por_fora":
+                st.info(
+                    f"Por fora é mais vantajoso: tributo menor em "
+                    f"{fmt_moeda(dentro_fora.diferenca_tributo)} "
+                    f"({fmt_percentual(dentro_fora.diferenca_percentual)})."
+                )
+            elif dentro_fora.vantajoso == "por_dentro":
+                st.info(
+                    f"Por dentro é mais vantajoso: tributo menor em "
+                    f"{fmt_moeda(dentro_fora.diferenca_tributo)} "
+                    f"({fmt_percentual(dentro_fora.diferenca_percentual)})."
+                )
+            else:
+                st.info("Diferença inferior a R$ 0,01 — regimes equivalentes para esta alíquota.")
+            st.info(
+                f"Economia anual estimada: {fmt_moeda(dentro_fora.economia_anual_estimada)} "
+                "(diferença × 12)."
+            )
+            if dentro_fora.aliquota_efetiva > ALIQUOTA_ALERTA_MIGRACAO:
+                st.info(
+                    "Alíquota efetiva acima de 15% — avaliar migração para regime regular IBS/CBS."
+                )
 
         # Memória de cálculo
         with st.expander("Memória de cálculo", expanded=False):
             st.markdown(f"**Cenário A — {cenario_a.nome}**")
             detalhes_a = {
-                k: fmt_moeda(v)
+                LABELS_PT.get(k, k.replace("_", " ").title()): fmt_moeda(v)
                 for k, v in cenario_a.detalhes.items()
                 if isinstance(v, Decimal)
             }
             st.table(detalhes_a)
             st.markdown(f"**Cenário B — {cenario_b.nome}**")
             detalhes_b = {
-                k: fmt_moeda(v)
+                LABELS_PT.get(k, k.replace("_", " ").title()): fmt_moeda(v)
                 for k, v in cenario_b.detalhes.items()
                 if isinstance(v, Decimal)
             }
