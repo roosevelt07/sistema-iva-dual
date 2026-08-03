@@ -38,3 +38,4 @@ tmp_*.png
 # por engano; a fixture fictícia usada nos testes é liberada explicitamente.
 tests/fixtures/*.pdf
 !tests/fixtures/pgdas_exemplo.pdf
+analise_iva.zip
