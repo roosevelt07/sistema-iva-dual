@@ -916,7 +916,9 @@ if resultado_export is not None:
         if st.button("Gerar Word", disabled=not DOCX_DISPONIVEL, key="btn_word_inline"):
             try:
                 st.session_state["docx_bytes"] = gerar_word(
-                    resultado_export, nome_cliente, data_relatorio, observacoes
+                    resultado_export, nome_cliente, data_relatorio, observacoes,
+                    dados_norm=st.session_state.get("dados_norm"),
+                    das_real=st.session_state.get("das_real"),
                 )
                 st.session_state["erro_relatorio"] = None
             except RuntimeError as exc:

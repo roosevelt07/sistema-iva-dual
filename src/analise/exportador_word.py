@@ -3,6 +3,7 @@
 import io
 from decimal import Decimal
 from pathlib import Path
+from typing import Optional
 
 try:
     from docx import Document
@@ -18,6 +19,8 @@ except ImportError:
 from src.analise.decisao import ResultadoAnalise
 from src.analise.formatters import fmt_moeda
 from src.analise.narrativa import gerar_narrativa
+from src.parser.normalizador import DadosNormalizados
+from src.simples.das_calculado import ResultadoDAS
 
 LOGO_PATH = Path(__file__).parent.parent.parent / "assets" / "logo.png"
 
@@ -104,7 +107,14 @@ def _configurar_rodape(doc, resultado: ResultadoAnalise) -> None:
     ).italic = True
 
 
-def gerar_word(resultado: ResultadoAnalise, nome_cliente: str, data_relatorio, observacoes: str = "") -> bytes:
+def gerar_word(
+    resultado: ResultadoAnalise,
+    nome_cliente: str,
+    data_relatorio,
+    observacoes: str = "",
+    dados_norm: Optional[DadosNormalizados] = None,
+    das_real: Optional[ResultadoDAS] = None,
+) -> bytes:
     """Gera o relatório Word e retorna os bytes do arquivo .docx."""
     if not DOCX_DISPONIVEL:
         raise RuntimeError("python-docx não está instalado.")
@@ -158,24 +168,30 @@ def gerar_word(resultado: ResultadoAnalise, nome_cliente: str, data_relatorio, o
 
     # 4. Atividades declaradas
     _titulo_verde(doc, "Atividades declaradas", level=1)
-    blocos_atividade = getattr(resultado.ctx, "blocos_atividade", None)
-    if blocos_atividade:
+    # Atividade/Anexo/Receita vêm de DadosNormalizados (produzido por
+    # normalizar_extrato) — ExtratoPGDAS.blocos_atividade não carrega
+    # Anexo nem DAS por atividade, só os campos brutos do extrato.
+    if not dados_norm or not dados_norm.atividades:
+        doc.add_paragraph("Dados disponíveis no Modo 3 — Extrato PGDAS-D.")
+    else:
+        atividades = dados_norm.atividades
         tabela_ativ = doc.add_table(rows=1, cols=5)
         tabela_ativ.style = "Light Grid Accent 1"
         for i, texto in enumerate(["Atividade", "Anexo", "Receita", "DAS", "Obs."]):
             tabela_ativ.rows[0].cells[i].text = texto
-        for bloco in blocos_atividade:
+        for atividade in atividades:
+            das_atividade = (
+                das_real.das_por_atividade.get(atividade.nome, Decimal("0"))
+                if das_real else Decimal("0")
+            )
             linha = tabela_ativ.add_row().cells
-            linha[0].text = getattr(bloco, "nome", "")
-            linha[1].text = str(getattr(bloco, "anexo", ""))
-            linha[2].text = fmt_moeda(getattr(bloco, "receita_atividade", Decimal("0")))
-            linha[3].text = fmt_moeda(getattr(bloco, "das", Decimal("0")))
-            linha[4].text = getattr(bloco, "observacao", "")
-        anexo_predominante = getattr(resultado, "anexo_predominante", None)
-        if anexo_predominante:
-            doc.add_paragraph(f"Anexo predominante: {anexo_predominante}")
-    else:
-        doc.add_paragraph("Dados disponíveis no Modo 3 — Extrato PGDAS-D.")
+            linha[0].text = atividade.nome
+            linha[1].text = atividade.anexo.value
+            linha[2].text = fmt_moeda(atividade.receita_atividade)
+            linha[3].text = fmt_moeda(das_atividade)
+            linha[4].text = "ST/Monofásico" if atividade.com_st_ou_monofasico else ""
+        if dados_norm.anexo_predominante:
+            doc.add_paragraph(f"Anexo predominante: {dados_norm.anexo_predominante.value}")
 
     # 5. Recomendação
     _titulo_verde(doc, "Recomendação", level=1)
