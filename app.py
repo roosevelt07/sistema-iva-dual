@@ -942,7 +942,9 @@ if resultado_export is not None:
         if st.button("Gerar PPT", disabled=not PPTX_DISPONIVEL, key="btn_ppt_inline"):
             try:
                 st.session_state["pptx_bytes"] = gerar_ppt(
-                    resultado_export, nome_cliente, data_relatorio
+                    resultado_export, nome_cliente, data_relatorio,
+                    dados_norm=st.session_state.get("dados_norm"),
+                    das_real=st.session_state.get("das_real"),
                 )
                 st.session_state["erro_relatorio"] = None
             except RuntimeError as exc:

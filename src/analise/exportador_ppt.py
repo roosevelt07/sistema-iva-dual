@@ -3,6 +3,7 @@
 import io
 from decimal import Decimal
 from pathlib import Path
+from typing import Optional
 
 try:
     from pptx import Presentation
@@ -21,6 +22,8 @@ except ImportError:
 
 from src.analise.decisao import ResultadoAnalise
 from src.analise.formatters import fmt_moeda, fmt_percentual
+from src.parser.normalizador import DadosNormalizados
+from src.simples.das_calculado import ResultadoDAS
 
 LOGO_PATH = Path(__file__).parent.parent.parent / "assets" / "logo.png"
 
@@ -255,17 +258,19 @@ def _slide_comparativo_carga(prs, layout, resultado: ResultadoAnalise):
     return slide
 
 
-def _slide_atividades(prs, layout, resultado: ResultadoAnalise):
+def _slide_atividades(
+    prs, layout, resultado: ResultadoAnalise,
+    dados_norm: Optional[DadosNormalizados] = None,
+    das_real: Optional[ResultadoDAS] = None,
+):
     slide = prs.slides.add_slide(layout)
     _fundo(slide, _LIGHT)
     _cabecalho_faixa(slide, "Atividades Declaradas", _VERDE, _BRANCO)
 
-    # ResultadoAnalise/ContextoCalculo não carregam dados por atividade
-    # hoje (isso vive em ExtratoPGDAS/DadosNormalizados, camada do
-    # parser). Guard defensivo: funciona automaticamente se uma versão
-    # futura passar a anexar esses dados.
-    blocos_atividade = getattr(resultado.ctx, "blocos_atividade", None)
-    if not blocos_atividade:
+    # Atividade/Anexo/Receita vêm de DadosNormalizados (produzido por
+    # normalizar_extrato) — ExtratoPGDAS.blocos_atividade não carrega
+    # Anexo nem DAS por atividade, só os campos brutos do extrato.
+    if not dados_norm or not dados_norm.atividades:
         _caixa_texto(
             slide, "Dados disponíveis no Modo 3 — Extrato PGDAS-D.",
             Cm(1.9), Cm(8), Cm(28), Cm(2),
@@ -273,8 +278,9 @@ def _slide_atividades(prs, layout, resultado: ResultadoAnalise):
         )
         return slide
 
+    atividades = dados_norm.atividades
     tabela_shape = slide.shapes.add_table(
-        len(blocos_atividade) + 1, 5, Cm(1.5), Cm(3), Cm(30), Cm(2 + len(blocos_atividade))
+        len(atividades) + 1, 5, Cm(1.5), Cm(3), Cm(30), Cm(2 + len(atividades))
     )
     tabela = tabela_shape.table
     for c, texto in enumerate(["Atividade", "Anexo", "Receita", "DAS", "Obs."]):
@@ -285,13 +291,17 @@ def _slide_atividades(prs, layout, resultado: ResultadoAnalise):
         for run in celula.text_frame.paragraphs[0].runs:
             run.font.color.rgb = _BRANCO
             run.font.bold = True
-    for i, bloco in enumerate(blocos_atividade, start=1):
+    for i, atividade in enumerate(atividades, start=1):
+        das_atividade = (
+            das_real.das_por_atividade.get(atividade.nome, Decimal("0"))
+            if das_real else Decimal("0")
+        )
         valores_linha = [
-            getattr(bloco, "nome", ""),
-            str(getattr(bloco, "anexo", "")),
-            fmt_moeda(getattr(bloco, "receita_atividade", Decimal("0"))),
-            fmt_moeda(getattr(bloco, "das", Decimal("0"))),
-            getattr(bloco, "observacao", ""),
+            atividade.nome,
+            atividade.anexo.value,
+            fmt_moeda(atividade.receita_atividade),
+            fmt_moeda(das_atividade),
+            "ST/Monofásico" if atividade.com_st_ou_monofasico else "",
         ]
         for c, texto in enumerate(valores_linha):
             celula = tabela.cell(i, c)
@@ -299,10 +309,9 @@ def _slide_atividades(prs, layout, resultado: ResultadoAnalise):
             celula.fill.solid()
             celula.fill.fore_color.rgb = _LIGHT if i % 2 == 0 else _BRANCO
 
-    anexo_predominante = getattr(resultado, "anexo_predominante", None)
-    if anexo_predominante:
+    if dados_norm.anexo_predominante:
         _caixa_texto(
-            slide, f"Anexo predominante: {anexo_predominante}",
+            slide, f"Anexo predominante: {dados_norm.anexo_predominante.value}",
             Cm(1.5), Cm(17), Cm(20), Cm(1),
             tamanho=12, cor=_CINZA,
         )
@@ -345,7 +354,13 @@ def _slide_recomendacao(prs, layout, resultado: ResultadoAnalise):
     return slide
 
 
-def gerar_ppt(resultado: ResultadoAnalise, nome_cliente: str, data_relatorio) -> bytes:
+def gerar_ppt(
+    resultado: ResultadoAnalise,
+    nome_cliente: str,
+    data_relatorio,
+    dados_norm: Optional[DadosNormalizados] = None,
+    das_real: Optional[ResultadoDAS] = None,
+) -> bytes:
     """Gera a apresentação PPT (5 slides) e retorna os bytes do arquivo .pptx."""
     if not PPTX_DISPONIVEL:
         raise RuntimeError("python-pptx não está instalado.")
@@ -358,7 +373,7 @@ def gerar_ppt(resultado: ResultadoAnalise, nome_cliente: str, data_relatorio) ->
     _slide_capa(prs, layout_branco, resultado, nome_cliente, data_relatorio)
     _slide_resumo_executivo(prs, layout_branco, resultado)
     _slide_comparativo_carga(prs, layout_branco, resultado)
-    _slide_atividades(prs, layout_branco, resultado)
+    _slide_atividades(prs, layout_branco, resultado, dados_norm=dados_norm, das_real=das_real)
     _slide_recomendacao(prs, layout_branco, resultado)
 
     buffer = io.BytesIO()
