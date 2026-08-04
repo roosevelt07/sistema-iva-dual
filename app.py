@@ -1,8 +1,9 @@
 import os
+import re
 import sys
 import tempfile
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import streamlit as st
 from loguru import logger
@@ -125,6 +126,41 @@ def _delta_economia(delta_absoluto: Decimal, delta_percentual: Decimal):
     if delta_absoluto < 0:
         return fmt_percentual(abs(delta_percentual)), "inverse"
     return None, "off"
+
+
+# `st.number_input` com type="number" HTML5 rejeita vírgula digitada —
+# um operador BR digitando "602.000,90" tem a vírgula descartada pelo
+# navegador, e o valor capturado colapsa para algo como "602,00". Por
+# isso os campos monetários usam st.text_input + este parser estrito,
+# em vez de number_input.
+RE_MOEDA_BR = re.compile(r"^(\d+|\d{1,3}(\.\d{3})+)(,\d{1,2})?$")
+
+
+def _parse_moeda_br(texto: str):
+    """Retorna (valor, None) se válido, ou (None, mensagem_erro)."""
+    texto = texto.strip()
+    if not texto:
+        return Decimal("0.00"), None
+    if not RE_MOEDA_BR.match(texto):
+        return None, f"Formato inválido: use 602.000,90 ou 602000,90 (não {texto!r})"
+    limpo = texto.replace(".", "").replace(",", ".")
+    try:
+        return Decimal(limpo), None
+    except InvalidOperation:
+        return None, f"Não foi possível interpretar: {texto!r}"
+
+
+def _campo_moeda(label: str, key: str):
+    texto = st.text_input(
+        label, key=key, placeholder="0,00",
+        help="Formato brasileiro: milhar com ponto, decimal com vírgula. Ex.: 602.000,90",
+    )
+    valor, erro = _parse_moeda_br(texto)
+    if erro:
+        st.caption(f"⚠️ {erro}")
+    elif valor is not None:
+        st.caption(f"✓ {fmt_moeda(valor)}")
+    return valor
 
 
 def _calcular_por_dentro_fora(faturamento: Decimal, aliquota: Decimal) -> dict:
@@ -305,9 +341,7 @@ with st.sidebar:
     # Entrada manual
     # ------------------------------------------------------------------
     if tipo_entrada == "Entrada manual":
-        faturamento = st.number_input(
-            "Faturamento anual (R$)", min_value=0.0, step=1000.0, format="%.2f"
-        )
+        faturamento = _campo_moeda("Faturamento anual (R$)", key="faturamento_texto")
         regime_label = st.selectbox("Regime atual", list(REGIME_MAP.keys()))
         setor_label = st.selectbox("Setor", list(SETOR_MAP.keys()))
         uf = st.selectbox("UF", UFS)
@@ -317,15 +351,9 @@ with st.sidebar:
         percentual_b2b = st.slider("% vendas B2B", 0, 100, 50)
 
         st.markdown("**Compras**")
-        compras_normal = st.number_input(
-            "Fornecedores regime normal (R$)", min_value=0.0, step=1000.0, format="%.2f"
-        )
-        compras_simples = st.number_input(
-            "Fornecedores Simples (R$)", min_value=0.0, step=1000.0, format="%.2f"
-        )
-        compras_isento = st.number_input(
-            "Fornecedores isentos (R$)", min_value=0.0, step=1000.0, format="%.2f"
-        )
+        compras_normal = _campo_moeda("Fornecedores regime normal (R$)", key="compras_normal_texto")
+        compras_simples = _campo_moeda("Fornecedores Simples (R$)", key="compras_simples_texto")
+        compras_isento = _campo_moeda("Fornecedores isentos (R$)", key="compras_isento_texto")
         aliquota_das = st.number_input(
             "Alíquota IBS/CBS no DAS do fornecedor (%)",
             min_value=0.0, value=0.5, step=0.1, format="%.2f",
@@ -380,18 +408,9 @@ with st.sidebar:
         percentual_b2b_pgdas = st.slider("% vendas B2B", 0, 100, 50, key="b2b_pgdas")
 
         st.markdown("**Compras (para crédito de entrada)**")
-        compras_normal_pgdas = st.number_input(
-            "Fornecedores regime normal (R$)",
-            min_value=0.0, step=1000.0, format="%.2f", key="comp_normal_pgdas",
-        )
-        compras_simples_pgdas = st.number_input(
-            "Fornecedores Simples (R$)",
-            min_value=0.0, step=1000.0, format="%.2f", key="comp_simples_pgdas",
-        )
-        compras_isento_pgdas = st.number_input(
-            "Fornecedores isentos (R$)",
-            min_value=0.0, step=1000.0, format="%.2f", key="comp_isento_pgdas",
-        )
+        compras_normal_pgdas = _campo_moeda("Fornecedores regime normal (R$)", key="comp_normal_pgdas")
+        compras_simples_pgdas = _campo_moeda("Fornecedores Simples (R$)", key="comp_simples_pgdas")
+        compras_isento_pgdas = _campo_moeda("Fornecedores isentos (R$)", key="comp_isento_pgdas")
 
         setor_pgdas_label = st.selectbox(
             "Setor (para redução Art. 128)", list(SETOR_MAP.keys()), key="setor_pgdas",
@@ -404,54 +423,64 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 if tipo_entrada == "Entrada manual" and analisar_clicado:
     st.session_state["fonte_resultado"] = "manual"
-    try:
-        kwargs = dict(
-            faturamento_anual=Decimal(str(faturamento)),
-            regime_atual=REGIME_MAP[regime_label],
-            setor=SETOR_MAP[setor_label],
-            uf=uf,
-            ano_referencia=int(ano),
-            percentual_b2b=Decimal(str(percentual_b2b / 100)),
-            compras_fornecedor_regime_normal=Decimal(str(compras_normal)),
-            compras_fornecedor_simples=Decimal(str(compras_simples)),
-            compras_fornecedor_isento=Decimal(str(compras_isento)),
-            aliquota_ibs_cbs_das_fornecedor=Decimal(str(aliquota_das / 100)),
+    if None in (faturamento, compras_normal, compras_simples, compras_isento):
+        st.session_state["erro"] = (
+            "Corrija os campos monetários com formato inválido antes de analisar."
         )
-        if icms_input is not None:
-            kwargs["icms_aliquota_efetiva"] = Decimal(str(icms_input / 100))
-        if iss_input is not None:
-            kwargs["iss_aliquota_efetiva"] = Decimal(str(iss_input / 100))
-        if pis_cofins_input is not None:
-            kwargs["pis_cofins_aliquota_efetiva"] = Decimal(str(pis_cofins_input / 100))
-
-        dados = DadosCliente(**kwargs)
-    except ValidationError as exc:
-        erros = [f"{e['loc'][0]}: {e['msg']}" for e in exc.errors()]
-        st.session_state["erro"] = "Dados inválidos: " + " | ".join(erros)
         st.session_state["resultado"] = None
-        logger.warning("Formulário inválido: {}", exc.errors())
     else:
         try:
-            ctx = to_contexto(dados)
-            resultado = analisar(ctx)
-            st.session_state["resultado"] = resultado
-            st.session_state["narrativa"] = gerar_narrativa(resultado)
-            st.session_state["erro"] = None
-        except ValueError as exc:
-            st.session_state["erro"] = f"Erro de configuração: {exc}"
-            st.session_state["resultado"] = None
-            logger.warning("ValueError no motor: {}", exc)
-        except Exception:
-            logger.exception("Erro inesperado no motor de análise")
-            st.session_state["erro"] = (
-                "Erro interno inesperado. Verifique os dados e tente novamente."
+            kwargs = dict(
+                faturamento_anual=faturamento,
+                regime_atual=REGIME_MAP[regime_label],
+                setor=SETOR_MAP[setor_label],
+                uf=uf,
+                ano_referencia=int(ano),
+                percentual_b2b=Decimal(str(percentual_b2b / 100)),
+                compras_fornecedor_regime_normal=compras_normal,
+                compras_fornecedor_simples=compras_simples,
+                compras_fornecedor_isento=compras_isento,
+                aliquota_ibs_cbs_das_fornecedor=Decimal(str(aliquota_das / 100)),
             )
+            if icms_input is not None:
+                kwargs["icms_aliquota_efetiva"] = Decimal(str(icms_input / 100))
+            if iss_input is not None:
+                kwargs["iss_aliquota_efetiva"] = Decimal(str(iss_input / 100))
+            if pis_cofins_input is not None:
+                kwargs["pis_cofins_aliquota_efetiva"] = Decimal(str(pis_cofins_input / 100))
+
+            dados = DadosCliente(**kwargs)
+        except ValidationError as exc:
+            erros = [f"{e['loc'][0]}: {e['msg']}" for e in exc.errors()]
+            st.session_state["erro"] = "Dados inválidos: " + " | ".join(erros)
             st.session_state["resultado"] = None
+            logger.warning("Formulário inválido: {}", exc.errors())
+        else:
+            try:
+                ctx = to_contexto(dados)
+                resultado = analisar(ctx)
+                st.session_state["resultado"] = resultado
+                st.session_state["narrativa"] = gerar_narrativa(resultado)
+                st.session_state["erro"] = None
+            except ValueError as exc:
+                st.session_state["erro"] = f"Erro de configuração: {exc}"
+                st.session_state["resultado"] = None
+                logger.warning("ValueError no motor: {}", exc)
+            except Exception:
+                logger.exception("Erro inesperado no motor de análise")
+                st.session_state["erro"] = (
+                    "Erro interno inesperado. Verifique os dados e tente novamente."
+                )
+                st.session_state["resultado"] = None
 
 elif tipo_entrada == "Upload PGDAS-D" and processar_pgdas:
     st.session_state["fonte_resultado"] = "pgdas"
     if arquivo_pdf is None:
         st.session_state["erro_pgdas"] = "Nenhum arquivo carregado."
+    elif None in (compras_normal_pgdas, compras_simples_pgdas, compras_isento_pgdas):
+        st.session_state["erro_pgdas"] = (
+            "Corrija os campos monetários com formato inválido antes de processar."
+        )
     else:
         try:
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
@@ -464,9 +493,9 @@ elif tipo_entrada == "Upload PGDAS-D" and processar_pgdas:
             dados_norm: DadosNormalizados = normalizar_extrato(
                 extrato=extrato,
                 percentual_b2b=Decimal(str(percentual_b2b_pgdas / 100)),
-                compras_regime_normal=Decimal(str(compras_normal_pgdas)),
-                compras_simples=Decimal(str(compras_simples_pgdas)),
-                compras_isento=Decimal(str(compras_isento_pgdas)),
+                compras_regime_normal=compras_normal_pgdas,
+                compras_simples=compras_simples_pgdas,
+                compras_isento=compras_isento_pgdas,
                 ano_referencia=int(ano_pgdas),
                 setor=SETOR_MAP[setor_pgdas_label],
             )
