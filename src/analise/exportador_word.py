@@ -24,6 +24,30 @@ LOGO_PATH = Path(__file__).parent.parent.parent / "assets" / "logo.png"
 _VERDE = RGBColor(0x00, 0xB2, 0xA9) if DOCX_DISPONIVEL else None
 _VERDE_HEX = "00B2A9"
 
+# Labels em português para as chaves internas de `cenario.detalhes`,
+# usadas na Memória de cálculo. Cobre as chaves reais dos 3 regimes
+# (src/analise/regimes/{simples,presumido,real}.py) + cenário B
+# compartilhado (_cenario_b_regime_regular). carga_bruta/carga_liquida/
+# credito_aproveitado são campos de CenarioUnico, não chaves de
+# `.detalhes` — mantidos aqui só por completude, nunca aparecem nesta
+# tabela hoje.
+LABELS_PT: dict = {
+    "ibs_cbs_das":            "IBS/CBS no DAS (Simples)",
+    "credito_entrada":        "Crédito de entrada",
+    "ibs_cbs_bruto":          "IBS/CBS bruto (regime regular)",
+    "credito_regime_normal":  "Crédito — fornecedores regime normal",
+    "credito_simples":        "Crédito — fornecedores Simples",
+    "pis_cofins":             "PIS/COFINS",
+    "pis_cofins_bruto":       "PIS/COFINS",
+    "credito_pis_cofins":     "Crédito PIS/COFINS",
+    "icms":                   "ICMS",
+    "iss":                    "ISS",
+    "reducao_icms_iss_aplicada": "Redução ICMS/ISS aplicada",
+    "carga_bruta":            "Carga bruta",
+    "carga_liquida":          "Carga líquida",
+    "credito_aproveitado":    "Crédito aproveitado",
+}
+
 
 def _detalhes_monetarios(detalhes: dict) -> dict:
     return {k: v for k, v in detalhes.items() if isinstance(v, Decimal)}
@@ -186,8 +210,9 @@ def gerar_word(resultado: ResultadoAnalise, nome_cliente: str, data_relatorio, o
         tabela_mem.rows[0].cells[0].text = "Item"
         tabela_mem.rows[0].cells[1].text = "Valor"
         for chave, valor in detalhes.items():
+            label = LABELS_PT.get(chave, chave.replace("_", " ").title())
             linha = tabela_mem.add_row().cells
-            linha[0].text = chave
+            linha[0].text = label
             linha[1].text = fmt_moeda(valor)
 
     buffer = io.BytesIO()
