@@ -918,7 +918,7 @@ if resultado_export is not None:
                 st.session_state["docx_bytes"] = gerar_word(
                     resultado_export, nome_cliente, data_relatorio, observacoes,
                     dados_norm=st.session_state.get("dados_norm"),
-                    das_real=st.session_state.get("das_real"),
+                    extrato=st.session_state.get("extrato"),
                 )
                 st.session_state["erro_relatorio"] = None
             except RuntimeError as exc:
@@ -946,7 +946,7 @@ if resultado_export is not None:
                 st.session_state["pptx_bytes"] = gerar_ppt(
                     resultado_export, nome_cliente, data_relatorio,
                     dados_norm=st.session_state.get("dados_norm"),
-                    das_real=st.session_state.get("das_real"),
+                    extrato=st.session_state.get("extrato"),
                 )
                 st.session_state["erro_relatorio"] = None
             except RuntimeError as exc:

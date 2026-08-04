@@ -20,7 +20,7 @@ from src.analise.decisao import ResultadoAnalise
 from src.analise.formatters import fmt_moeda
 from src.analise.narrativa import gerar_narrativa
 from src.parser.normalizador import DadosNormalizados
-from src.simples.das_calculado import ResultadoDAS
+from src.parser.pgdas_parser import ExtratoPGDAS
 
 LOGO_PATH = Path(__file__).parent.parent.parent / "assets" / "logo.png"
 
@@ -113,7 +113,7 @@ def gerar_word(
     data_relatorio,
     observacoes: str = "",
     dados_norm: Optional[DadosNormalizados] = None,
-    das_real: Optional[ResultadoDAS] = None,
+    extrato: Optional[ExtratoPGDAS] = None,
 ) -> bytes:
     """Gera o relatório Word e retorna os bytes do arquivo .docx."""
     if not DOCX_DISPONIVEL:
@@ -136,7 +136,8 @@ def gerar_word(
     titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p = doc.add_paragraph(f"Cliente: {nome_cliente or '—'}")
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    extrato = getattr(resultado, "extrato", None)
+    # extrato vem do parâmetro da função — não redeclarar aqui, senão
+    # sobrescreve (sempre com None) o valor real recebido de app.py.
     cnpj = getattr(extrato, "cnpj_basico", None)
     if cnpj:
         p = doc.add_paragraph(f"CNPJ: {cnpj}")
@@ -169,26 +170,28 @@ def gerar_word(
     # 4. Atividades declaradas
     _titulo_verde(doc, "Atividades declaradas", level=1)
     # Atividade/Anexo/Receita vêm de DadosNormalizados (produzido por
-    # normalizar_extrato) — ExtratoPGDAS.blocos_atividade não carrega
-    # Anexo nem DAS por atividade, só os campos brutos do extrato.
+    # normalizar_extrato). A coluna DAS usa BlocoAtividade.total — valor
+    # real impresso no extrato — não o DAS recalculado pelo motor
+    # (ResultadoDAS.das_por_atividade), que pode divergir por
+    # arredondamentos internos das alíquotas do CGSN.
     if not dados_norm or not dados_norm.atividades:
         doc.add_paragraph("Dados disponíveis no Modo 3 — Extrato PGDAS-D.")
     else:
         atividades = dados_norm.atividades
+        totais_por_nome = (
+            {b.descricao: b.total for b in extrato.blocos_atividade} if extrato else {}
+        )
         tabela_ativ = doc.add_table(rows=1, cols=5)
         tabela_ativ.style = "Light Grid Accent 1"
         for i, texto in enumerate(["Atividade", "Anexo", "Receita", "DAS", "Obs."]):
             tabela_ativ.rows[0].cells[i].text = texto
         for atividade in atividades:
-            das_atividade = (
-                das_real.das_por_atividade.get(atividade.nome, Decimal("0"))
-                if das_real else Decimal("0")
-            )
+            total_real = totais_por_nome.get(atividade.nome, Decimal("0"))
             linha = tabela_ativ.add_row().cells
             linha[0].text = atividade.nome
             linha[1].text = atividade.anexo.value
             linha[2].text = fmt_moeda(atividade.receita_atividade)
-            linha[3].text = fmt_moeda(das_atividade)
+            linha[3].text = fmt_moeda(total_real)
             linha[4].text = "ST/Monofásico" if atividade.com_st_ou_monofasico else ""
         if dados_norm.anexo_predominante:
             doc.add_paragraph(f"Anexo predominante: {dados_norm.anexo_predominante.value}")

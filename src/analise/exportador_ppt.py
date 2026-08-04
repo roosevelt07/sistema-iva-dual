@@ -23,7 +23,7 @@ except ImportError:
 from src.analise.decisao import ResultadoAnalise
 from src.analise.formatters import fmt_moeda, fmt_percentual
 from src.parser.normalizador import DadosNormalizados
-from src.simples.das_calculado import ResultadoDAS
+from src.parser.pgdas_parser import ExtratoPGDAS
 
 LOGO_PATH = Path(__file__).parent.parent.parent / "assets" / "logo.png"
 
@@ -261,15 +261,17 @@ def _slide_comparativo_carga(prs, layout, resultado: ResultadoAnalise):
 def _slide_atividades(
     prs, layout, resultado: ResultadoAnalise,
     dados_norm: Optional[DadosNormalizados] = None,
-    das_real: Optional[ResultadoDAS] = None,
+    extrato: Optional[ExtratoPGDAS] = None,
 ):
     slide = prs.slides.add_slide(layout)
     _fundo(slide, _LIGHT)
     _cabecalho_faixa(slide, "Atividades Declaradas", _VERDE, _BRANCO)
 
     # Atividade/Anexo/Receita vêm de DadosNormalizados (produzido por
-    # normalizar_extrato) — ExtratoPGDAS.blocos_atividade não carrega
-    # Anexo nem DAS por atividade, só os campos brutos do extrato.
+    # normalizar_extrato). A coluna DAS usa BlocoAtividade.total —
+    # valor real impresso no extrato — não o DAS recalculado pelo motor
+    # (ResultadoDAS.das_por_atividade), que pode divergir por
+    # arredondamentos internos das alíquotas do CGSN.
     if not dados_norm or not dados_norm.atividades:
         _caixa_texto(
             slide, "Dados disponíveis no Modo 3 — Extrato PGDAS-D.",
@@ -279,6 +281,9 @@ def _slide_atividades(
         return slide
 
     atividades = dados_norm.atividades
+    totais_por_nome = (
+        {b.descricao: b.total for b in extrato.blocos_atividade} if extrato else {}
+    )
     tabela_shape = slide.shapes.add_table(
         len(atividades) + 1, 5, Cm(1.5), Cm(3), Cm(30), Cm(2 + len(atividades))
     )
@@ -292,15 +297,12 @@ def _slide_atividades(
             run.font.color.rgb = _BRANCO
             run.font.bold = True
     for i, atividade in enumerate(atividades, start=1):
-        das_atividade = (
-            das_real.das_por_atividade.get(atividade.nome, Decimal("0"))
-            if das_real else Decimal("0")
-        )
+        total_real = totais_por_nome.get(atividade.nome, Decimal("0"))
         valores_linha = [
             atividade.nome,
             atividade.anexo.value,
             fmt_moeda(atividade.receita_atividade),
-            fmt_moeda(das_atividade),
+            fmt_moeda(total_real),
             "ST/Monofásico" if atividade.com_st_ou_monofasico else "",
         ]
         for c, texto in enumerate(valores_linha):
@@ -359,7 +361,7 @@ def gerar_ppt(
     nome_cliente: str,
     data_relatorio,
     dados_norm: Optional[DadosNormalizados] = None,
-    das_real: Optional[ResultadoDAS] = None,
+    extrato: Optional[ExtratoPGDAS] = None,
 ) -> bytes:
     """Gera a apresentação PPT (5 slides) e retorna os bytes do arquivo .pptx."""
     if not PPTX_DISPONIVEL:
@@ -373,7 +375,7 @@ def gerar_ppt(
     _slide_capa(prs, layout_branco, resultado, nome_cliente, data_relatorio)
     _slide_resumo_executivo(prs, layout_branco, resultado)
     _slide_comparativo_carga(prs, layout_branco, resultado)
-    _slide_atividades(prs, layout_branco, resultado, dados_norm=dados_norm, das_real=das_real)
+    _slide_atividades(prs, layout_branco, resultado, dados_norm=dados_norm, extrato=extrato)
     _slide_recomendacao(prs, layout_branco, resultado)
 
     buffer = io.BytesIO()
