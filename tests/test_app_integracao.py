@@ -5,10 +5,10 @@ sidebar e clique nos botões, garantindo que os valores digitados
 chegam corretos ao motor (`DadosCliente` -> `to_contexto` -> `analisar`).
 
 Os índices dos widgets (`at.number_input[i]`, `at.selectbox[i]`, ...)
-seguem a ordem de renderização da sidebar em `app.py` para o Modo
-"🧮 Analisador IVA" (modo padrão, `index=1` no `st.radio`). Se a ordem
-dos widgets nesse modo mudar, os índices usados aqui precisam ser
-atualizados.
+seguem a ordem de renderização da sidebar em `app.py` para o fluxo
+"Entrada manual" (opção padrão do toggle "Fonte dos dados",
+`at.radio[0]`). Se a ordem dos widgets desse fluxo mudar, os índices
+usados aqui precisam ser atualizados.
 """
 
 import os
@@ -33,7 +33,7 @@ def test_carregamento_inicial():
 
 def test_simples_alimentos_2027():
     at = _app()
-    at.radio[0].set_value("🧮 Analisador IVA")
+    at.radio[0].set_value("Entrada manual")
     at.run()
     at.number_input[0].set_value(1_200_000.0)  # Faturamento anual
     at.selectbox[0].set_value("Simples Nacional")
@@ -55,7 +55,7 @@ def test_simples_alimentos_2027():
 
 def test_faturamento_zero_nao_quebra():
     at = _app()
-    at.radio[0].set_value("🧮 Analisador IVA")
+    at.radio[0].set_value("Entrada manual")
     at.run()
     at.number_input[0].set_value(0.0)
     at.button[0].click()
@@ -70,7 +70,7 @@ def test_faturamento_zero_nao_quebra():
 
 def test_icms_zero_declarado_nao_usa_padrao():
     at = _app()
-    at.radio[0].set_value("🧮 Analisador IVA")
+    at.radio[0].set_value("Entrada manual")
     at.run()
     at.number_input[0].set_value(1_000_000.0)
     at.selectbox[0].set_value("Lucro Presumido")

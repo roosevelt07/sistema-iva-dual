@@ -41,7 +41,6 @@ from src.analise.graficos import (
     grafico_dentro_fora,
     grafico_evolucao_transicao,
     grafico_gauge_aliquota,
-    grafico_pizza_atual,
     grafico_pizzas_comparativo,
 )
 from src.analise.formatters import fmt_moeda, fmt_percentual
@@ -54,7 +53,7 @@ from src.simples.dentro_fora import ALIQUOTA_ALERTA_MIGRACAO, calcular_dentro_fo
 # ---------------------------------------------------------------------------
 # Mapeamentos e constantes
 # ---------------------------------------------------------------------------
-MODOS = ["📊 Sistema Atual", "🧮 Analisador IVA", "📥 Extrato PGDAS-D", "📄 Relatório"]
+MODOS = ["🧮 Analisador IVA"]
 
 REGIME_MAP = {
     "Simples Nacional": Regime.SIMPLES,
@@ -84,14 +83,6 @@ UFS = [
 ]
 
 ANOS = list(range(2026, 2034))
-
-# PIS/COFINS individuais por regime — usados só no Modo 1 (calculadora simples).
-# Não estão em config_lc214.py (que só guarda o total combinado 3,65%/9,25%).
-PIS_COFINS_INDIVIDUAL = {
-    Regime.SIMPLES: (0.65, 3.00),
-    Regime.PRESUMIDO: (0.65, 3.00),
-    Regime.REAL: (1.65, 7.60),
-}
 
 # Labels em português para as chaves internas de `cenario.detalhes`,
 # usadas na Memória de cálculo. Cobre as chaves reais dos 3 regimes
@@ -293,47 +284,27 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
-# Sidebar — seleção de modo + formulário
+# Sidebar — fonte dos dados + formulário
 # ---------------------------------------------------------------------------
+analisar_clicado = False
+processar_pgdas = False
+
 with st.sidebar:
     if os.path.exists("logo.png"):
         st.image("logo.png", use_container_width=True)
     st.markdown("## Analisador IVA")
 
-    modo = st.radio("Modo", MODOS, index=1, key="modo_selecionado")
+    tipo_entrada = st.radio(
+        "Fonte dos dados",
+        ["Entrada manual", "Upload PGDAS-D"],
+        horizontal=True,
+        key="tipo_entrada",
+    )
 
     # ------------------------------------------------------------------
-    # MODO 1 — Sistema Atual
+    # Entrada manual
     # ------------------------------------------------------------------
-    if modo == MODOS[0]:
-        faturamento_atual = st.number_input(
-            "Faturamento bruto (R$)", min_value=0.0, step=1000.0, format="%.2f"
-        )
-        regime_atual_label = st.selectbox("Regime", list(REGIME_MAP.keys()), key="regime_atual")
-        setor_atual_label = st.selectbox("Setor", list(SETOR_MAP.keys()), key="setor_atual")
-        uf_atual = st.selectbox("UF", UFS, key="uf_atual")
-        ano_atual = st.selectbox("Ano de referência", ANOS, key="ano_atual")
-
-        st.markdown("**Alíquotas declaradas**")
-        pis_default, cofins_default = PIS_COFINS_INDIVIDUAL[REGIME_MAP[regime_atual_label]]
-        pis_pct = st.number_input(
-            "PIS (%)", min_value=0.0, value=pis_default, step=0.05, format="%.2f",
-            key=f"pis_pct_{regime_atual_label}",
-        )
-        cofins_pct = st.number_input(
-            "COFINS (%)", min_value=0.0, value=cofins_default, step=0.05, format="%.2f",
-            key=f"cofins_pct_{regime_atual_label}",
-        )
-        icms_pct_atual = st.number_input("ICMS (%)", min_value=0.0, value=19.0, step=0.5, format="%.2f")
-        iss_pct_atual = st.number_input("ISS (%)", min_value=0.0, value=5.0, step=0.5, format="%.2f")
-        ipi_pct_atual = st.number_input("IPI (%)", min_value=0.0, value=0.0, step=0.5, format="%.2f")
-
-        calcular_clicado = st.button("Calcular", key="btn_calcular_atual")
-
-    # ------------------------------------------------------------------
-    # MODO 2 — Analisador IVA
-    # ------------------------------------------------------------------
-    elif modo == MODOS[1]:
+    if tipo_entrada == "Entrada manual":
         faturamento = st.number_input(
             "Faturamento anual (R$)", min_value=0.0, step=1000.0, format="%.2f"
         )
@@ -391,9 +362,9 @@ with st.sidebar:
         analisar_clicado = st.button("Analisar", key="btn_analisar_iva")
 
     # ------------------------------------------------------------------
-    # MODO 3 — Extrato PGDAS-D
+    # Upload PGDAS-D
     # ------------------------------------------------------------------
-    elif modo == MODOS[2]:
+    else:
         st.markdown("**Upload do extrato**")
         arquivo_pdf = st.file_uploader(
             "Extrato PGDAS-D (PDF)",
@@ -428,66 +399,11 @@ with st.sidebar:
 
         processar_pgdas = st.button("Processar Extrato", key="btn_pgdas")
 
-    # ------------------------------------------------------------------
-    # MODO 4 — Relatório
-    # ------------------------------------------------------------------
-    elif modo == MODOS[3]:
-        nome_cliente = ""
-        data_relatorio = date.today()
-        observacoes = ""
-        gerar_word_clicado = False
-        gerar_ppt_clicado = False
-
-        if st.session_state.get("resultado") is None:
-            st.warning("Execute uma análise primeiro.")
-        else:
-            nome_cliente = st.text_input("Nome do cliente")
-            data_relatorio = st.date_input("Data do relatório", value=date.today())
-            observacoes = st.text_area("Observações adicionais")
-
-            if not DOCX_DISPONIVEL:
-                st.caption("python-docx não instalado — exportação Word desabilitada.")
-            gerar_word_clicado = st.button(
-                "Gerar Word", key="btn_gerar_word", disabled=not DOCX_DISPONIVEL
-            )
-
-            if not PPTX_DISPONIVEL:
-                st.caption("python-pptx não instalado — exportação PPT desabilitada.")
-            gerar_ppt_clicado = st.button(
-                "Gerar PPT", key="btn_gerar_ppt", disabled=not PPTX_DISPONIVEL
-            )
-
 # ---------------------------------------------------------------------------
 # Processamento
 # ---------------------------------------------------------------------------
-if modo == MODOS[0] and calcular_clicado:
-    faturamento_D = Decimal(str(faturamento_atual))
-    aliquotas = {
-        "PIS": Decimal(str(pis_pct)),
-        "COFINS": Decimal(str(cofins_pct)),
-        "ICMS": Decimal(str(icms_pct_atual)),
-        "ISS": Decimal(str(iss_pct_atual)),
-        "IPI": Decimal(str(ipi_pct_atual)),
-    }
-    valores = {nome: (faturamento_D * aliquota / 100) for nome, aliquota in aliquotas.items()}
-    total = sum(valores.values())
-    aliquota_efetiva = (total / faturamento_D) if faturamento_D > 0 else Decimal("0")
-
-    st.session_state["resultado_atual"] = {
-        "faturamento": faturamento_D,
-        "aliquotas": aliquotas,
-        "valores": valores,
-        "total": total,
-        "aliquota_efetiva": aliquota_efetiva,
-        "contexto": {
-            "regime": regime_atual_label,
-            "setor": setor_atual_label,
-            "uf": uf_atual,
-            "ano": ano_atual,
-        },
-    }
-
-elif modo == MODOS[1] and analisar_clicado:
+if tipo_entrada == "Entrada manual" and analisar_clicado:
+    st.session_state["fonte_resultado"] = "manual"
     try:
         kwargs = dict(
             faturamento_anual=Decimal(str(faturamento)),
@@ -532,7 +448,8 @@ elif modo == MODOS[1] and analisar_clicado:
             )
             st.session_state["resultado"] = None
 
-elif modo == MODOS[2] and processar_pgdas:
+elif tipo_entrada == "Upload PGDAS-D" and processar_pgdas:
+    st.session_state["fonte_resultado"] = "pgdas"
     if arquivo_pdf is None:
         st.session_state["erro_pgdas"] = "Nenhum arquivo carregado."
     else:
@@ -566,7 +483,7 @@ elif modo == MODOS[2] and processar_pgdas:
             st.session_state["dentro_fora"] = dentro_fora
             st.session_state["narrativa_pgdas"] = gerar_narrativa(resultado_pgdas)
             st.session_state["erro_pgdas"] = None
-            st.session_state["resultado"] = resultado_pgdas  # alimenta o Modo Relatório
+            st.session_state["resultado"] = resultado_pgdas  # alimenta a exportação inline
 
         except PGDASParserError as exc:
             logger.warning("Falha ao parsear PGDAS: {}", exc)
@@ -574,42 +491,10 @@ elif modo == MODOS[2] and processar_pgdas:
         except ValidationError as exc:
             erros = [f"{e['loc'][0]}: {e['msg']}" for e in exc.errors()]
             st.session_state["erro_pgdas"] = "Dados inválidos: " + " | ".join(erros)
-            logger.warning("ValidationError no Modo 3: {}", exc.errors())
+            logger.warning("ValidationError no fluxo PGDAS-D: {}", exc.errors())
         except Exception:
-            logger.exception("Erro inesperado no Modo 3")
+            logger.exception("Erro inesperado no fluxo PGDAS-D")
             st.session_state["erro_pgdas"] = "Erro interno inesperado."
-
-elif modo == MODOS[3]:
-    resultado_para_relatorio = st.session_state.get("resultado")
-    if resultado_para_relatorio is not None:
-        if gerar_word_clicado:
-            try:
-                st.session_state["docx_bytes"] = gerar_word(
-                    resultado_para_relatorio, nome_cliente, data_relatorio, observacoes
-                )
-                st.session_state["erro_relatorio"] = None
-            except RuntimeError as exc:
-                st.session_state["erro_relatorio"] = str(exc)
-                logger.warning("Falha ao gerar Word: {}", exc)
-            except Exception:
-                logger.exception("Erro inesperado ao gerar Word")
-                st.session_state["erro_relatorio"] = (
-                    "Erro interno ao gerar Word. Tente novamente."
-                )
-        if gerar_ppt_clicado:
-            try:
-                st.session_state["pptx_bytes"] = gerar_ppt(
-                    resultado_para_relatorio, nome_cliente, data_relatorio
-                )
-                st.session_state["erro_relatorio"] = None
-            except RuntimeError as exc:
-                st.session_state["erro_relatorio"] = str(exc)
-                logger.warning("Falha ao gerar PPT: {}", exc)
-            except Exception:
-                logger.exception("Erro inesperado ao gerar PPT")
-                st.session_state["erro_relatorio"] = (
-                    "Erro interno ao gerar PPT. Tente novamente."
-                )
 
 # ---------------------------------------------------------------------------
 # Área principal
@@ -626,52 +511,12 @@ with col_titulo:
 
 st.divider()
 
-# ------------------------------------------------------------------
-# MODO 1 — Área principal
-# ------------------------------------------------------------------
-if modo == MODOS[0]:
-    ra = st.session_state.get("resultado_atual")
-    if ra is None:
-        st.markdown(
-            '<div class="instrucao-box">Preencha os dados na barra lateral e clique em '
-            "<strong>Calcular</strong>.</div>",
-            unsafe_allow_html=True,
-        )
-    else:
-        cols = st.columns(5)
-        for col, nome in zip(cols, ["PIS", "COFINS", "ICMS", "ISS", "IPI"]):
-            col.metric(nome, fmt_moeda(ra["valores"][nome]))
-
-        st.write("")
-        st.markdown(
-            f'<div class="card-migrar">Total: {fmt_moeda(ra["total"])} '
-            f'({fmt_percentual(ra["aliquota_efetiva"] * 100)} efetivo)</div>',
-            unsafe_allow_html=True,
-        )
-
-        st.write("")
-        st.plotly_chart(grafico_pizza_atual(ra["valores"]), use_container_width=True)
-
-        with st.expander("Memória de cálculo", expanded=False):
-            ctx_info = ra["contexto"]
-            st.caption(
-                f"Regime: {ctx_info['regime']} | Setor: {ctx_info['setor']} | "
-                f"UF: {ctx_info['uf']} | Ano: {ctx_info['ano']}"
-            )
-            linhas = {
-                nome: {
-                    "Base de cálculo": fmt_moeda(ra["faturamento"]),
-                    "Alíquota": fmt_percentual(ra["aliquotas"][nome]),
-                    "Valor": fmt_moeda(valor),
-                }
-                for nome, valor in ra["valores"].items()
-            }
-            st.table(linhas)
+fonte = st.session_state.get("fonte_resultado")
 
 # ------------------------------------------------------------------
-# MODO 2 — Área principal
+# Fluxo manual — Área principal
 # ------------------------------------------------------------------
-elif modo == MODOS[1]:
+if fonte == "manual":
     erro = st.session_state.get("erro")
     resultado = st.session_state.get("resultado")
 
@@ -793,9 +638,9 @@ elif modo == MODOS[1]:
             st.table(detalhes_b)
 
 # ------------------------------------------------------------------
-# MODO 3 — Extrato PGDAS-D — Área principal
+# Fluxo PGDAS-D — Área principal
 # ------------------------------------------------------------------
-elif modo == MODOS[2]:
+elif fonte == "pgdas":
     erro_pgdas = st.session_state.get("erro_pgdas")
     resultado_pgdas = st.session_state.get("resultado_pgdas")
     extrato = st.session_state.get("extrato")
@@ -999,54 +844,96 @@ elif modo == MODOS[2]:
             st.table(detalhes_b)
 
 # ------------------------------------------------------------------
-# MODO 4 — Área principal
+# Instrução inicial — nada analisado ainda nesta sessão
 # ------------------------------------------------------------------
 else:
-    resultado_iva = st.session_state.get("resultado")
-    if resultado_iva is None:
+    if tipo_entrada == "Entrada manual":
         st.markdown(
-            '<div class="instrucao-box">Execute uma análise no modo '
-            "<strong>Analisador IVA</strong> primeiro.</div>",
+            '<div class="instrucao-box">Preencha os dados do cliente na barra lateral e '
+            "clique em <strong>Analisar</strong>.<br>O resultado da simulação IBS/CBS "
+            "aparecerá aqui.</div>",
             unsafe_allow_html=True,
         )
     else:
-        col_resumo_a, col_resumo_b = st.columns(2)
-        with col_resumo_a:
-            st.metric("Carga Atual", fmt_moeda(resultado_iva.cenarios.cenario_a.carga_liquida))
-            st.metric("Carga IVA Regular", fmt_moeda(resultado_iva.cenarios.cenario_b.carga_liquida))
-        with col_resumo_b:
-            st.metric("Delta", fmt_moeda(resultado_iva.delta_absoluto))
-            st.metric("Recomendação", resultado_iva.recomendacao.replace("_", " ").title())
+        st.markdown(
+            '<div class="instrucao-box">Carregue o extrato PGDAS-D na barra '
+            "lateral e clique em <strong>Processar Extrato</strong>.</div>",
+            unsafe_allow_html=True,
+        )
 
-        erro_relatorio = st.session_state.get("erro_relatorio")
-        if erro_relatorio:
-            st.error(f"Não foi possível gerar o relatório: {erro_relatorio}")
+# ------------------------------------------------------------------
+# Exportação inline — comum aos dois fluxos, roda sempre que houver
+# um resultado disponível em st.session_state["resultado"]
+# ------------------------------------------------------------------
+resultado_export = st.session_state.get("resultado")
+if resultado_export is not None:
+    st.divider()
+    st.subheader("Exportar relatório")
+    col_exp1, col_exp2, col_exp3 = st.columns([2, 1, 1])
+    with col_exp1:
+        nome_cliente = st.text_input("Nome do cliente", key="nome_cliente_export")
+    with col_exp2:
+        data_relatorio = st.date_input("Data", value=date.today(), key="data_export")
+    with col_exp3:
+        observacoes = st.text_area("Observações", key="obs_export", height=68)
 
+    cliente_slug = nome_cliente.strip().replace(" ", "_").lower() or "cliente"
+    data_slug = str(data_relatorio).replace("-", "")
+
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if not DOCX_DISPONIVEL:
+            st.caption("python-docx não instalado — exportação Word desabilitada.")
+        if st.button("Gerar Word", disabled=not DOCX_DISPONIVEL, key="btn_word_inline"):
+            try:
+                st.session_state["docx_bytes"] = gerar_word(
+                    resultado_export, nome_cliente, data_relatorio, observacoes
+                )
+                st.session_state["erro_relatorio"] = None
+            except RuntimeError as exc:
+                st.session_state["erro_relatorio"] = str(exc)
+                logger.warning("Falha ao gerar Word: {}", exc)
+            except Exception:
+                logger.exception("Erro inesperado ao gerar Word")
+                st.session_state["erro_relatorio"] = (
+                    "Erro interno ao gerar Word. Tente novamente."
+                )
         docx_bytes = st.session_state.get("docx_bytes")
-        pptx_bytes = st.session_state.get("pptx_bytes")
-
-        cliente_slug = nome_cliente.strip().replace(" ", "_").lower() or "cliente"
-        data_slug = str(data_relatorio).replace("-", "")
-
         if docx_bytes:
             st.download_button(
                 "⬇️ Baixar Word (.docx)",
                 data=docx_bytes,
                 file_name=f"analise_iva_{cliente_slug}_{data_slug}.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="download_word_inline",
             )
+    with col_btn2:
+        if not PPTX_DISPONIVEL:
+            st.caption("python-pptx não instalado — exportação PPT desabilitada.")
+        if st.button("Gerar PPT", disabled=not PPTX_DISPONIVEL, key="btn_ppt_inline"):
+            try:
+                st.session_state["pptx_bytes"] = gerar_ppt(
+                    resultado_export, nome_cliente, data_relatorio
+                )
+                st.session_state["erro_relatorio"] = None
+            except RuntimeError as exc:
+                st.session_state["erro_relatorio"] = str(exc)
+                logger.warning("Falha ao gerar PPT: {}", exc)
+            except Exception:
+                logger.exception("Erro inesperado ao gerar PPT")
+                st.session_state["erro_relatorio"] = (
+                    "Erro interno ao gerar PPT. Tente novamente."
+                )
+        pptx_bytes = st.session_state.get("pptx_bytes")
         if pptx_bytes:
             st.download_button(
                 "⬇️ Baixar PPT (.pptx)",
                 data=pptx_bytes,
                 file_name=f"analise_iva_{cliente_slug}_{data_slug}.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                key="download_ppt_inline",
             )
 
-        if not docx_bytes and not pptx_bytes:
-            st.markdown(
-                '<div class="instrucao-box">📄 Word e PPT — clique em '
-                "<strong>Gerar Word</strong> ou <strong>Gerar PPT</strong> na barra lateral."
-                "</div>",
-                unsafe_allow_html=True,
-            )
+    erro_relatorio = st.session_state.get("erro_relatorio")
+    if erro_relatorio:
+        st.error(f"Não foi possível gerar o relatório: {erro_relatorio}")
