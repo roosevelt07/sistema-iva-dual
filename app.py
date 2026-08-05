@@ -4,10 +4,13 @@ import sys
 import tempfile
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 import streamlit as st
 from loguru import logger
 from pydantic import ValidationError
+
+LOGO_PATH = Path(__file__).parent / "assets" / "logo.png"
 
 # Remove handler padrão e reconfigura com arquivo rotativo
 logger.remove()
@@ -353,8 +356,8 @@ analisar_clicado = False
 processar_pgdas = False
 
 with st.sidebar:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", use_container_width=True)
+    if LOGO_PATH.exists():
+        st.image(str(LOGO_PATH), use_container_width=True)
     st.markdown("## Analisador IVA")
 
     tipo_entrada = st.radio(
@@ -557,8 +560,8 @@ elif tipo_entrada == "Upload PGDAS-D" and processar_pgdas:
 # ---------------------------------------------------------------------------
 col_logo, col_titulo = st.columns([1, 4])
 with col_logo:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", width=80)
+    if LOGO_PATH.exists():
+        st.image(str(LOGO_PATH), width=80)
 with col_titulo:
     st.markdown('<h1 class="titulo-app">Analisador IVA</h1>', unsafe_allow_html=True)
     st.markdown(
