@@ -132,12 +132,9 @@ def grafico_barra_comparativo(resultado: ResultadoAnalise) -> go.Figure:
 
     fig = go.Figure()
 
-    # Rótulos de segmento ficam DENTRO da barra (não "outside") — numa
-    # barra empilhada, "outside" ancora o texto na borda daquele
-    # segmento específico, e segmentos vizinhos/estreitos colidem entre
-    # si. `constraintext="both"` esconde automaticamente o texto que não
-    # cabe num segmento estreito, em vez de deixá-lo vazar por cima do
-    # vizinho.
+    # Segmentos não levam rótulo próprio — texto dentro/na borda de cada
+    # trace empilhado colide com o vizinho em segmentos estreitos. Cada
+    # barra ganha uma única anotação de total, fora da área empilhada.
     for chave, valor in cenario_a.detalhes.items():
         if chave in _ROTULOS_CENARIO_A and isinstance(valor, Decimal) and valor > 0:
             fig.add_trace(
@@ -145,9 +142,6 @@ def grafico_barra_comparativo(resultado: ResultadoAnalise) -> go.Figure:
                     name=f"Atual — {_ROTULOS_CENARIO_A[chave]}",
                     y=["Atual"], x=[float(valor)], orientation="h",
                     marker=dict(color=CORES["escuro"]),
-                    text=[fmt_moeda(valor)], textposition="inside",
-                    insidetextfont=dict(color=CORES["branco"], size=11),
-                    constraintext="both",
                 )
             )
 
@@ -159,38 +153,39 @@ def grafico_barra_comparativo(resultado: ResultadoAnalise) -> go.Figure:
         go.Bar(
             name="IVA — CBS", y=["IVA"], x=[float(cbs_valor)], orientation="h",
             marker=dict(color=CORES["teal_escuro"]),
-            text=[fmt_moeda(cbs_valor)], textposition="inside",
-            insidetextfont=dict(color=CORES["branco"], size=11),
-            constraintext="both",
         )
     )
     fig.add_trace(
         go.Bar(
             name="IVA — IBS", y=["IVA"], x=[float(ibs_valor)], orientation="h",
             marker=dict(color=CORES["teal"]),
-            text=[fmt_moeda(ibs_valor)], textposition="inside",
-            insidetextfont=dict(color=CORES["branco"], size=11),
-            constraintext="both",
         )
     )
 
-    # Totais por linha — anotação dedicada fora da barra, em vez de
-    # disputar espaço com os rótulos de segmento na borda.
+    # Total barra "Atual" — carga_liquida == carga_bruta aqui (cenário A
+    # nunca tem crédito), então bate com o comprimento real da barra.
     fig.add_annotation(
-        x=float(cenario_a.carga_bruta), y="Atual",
-        text=f"Total: {fmt_moeda(cenario_a.carga_bruta)}",
-        showarrow=True, arrowhead=2, ax=40, ay=0,
-        font=dict(color=CORES["escuro"], size=12),
+        x=float(cenario_a.carga_liquida),
+        y="Atual",
+        text=f"Total: {fmt_moeda(cenario_a.carga_liquida)}",
+        showarrow=False,
+        xanchor="left",
+        xshift=8,
+        font=dict(size=12, color="#373435"),
     )
+    # Total barra "IVA"
     fig.add_annotation(
-        x=float(cenario_b.carga_bruta), y="IVA",
+        x=float(cenario_b.carga_bruta),
+        y="IVA",
         text=f"Total: {fmt_moeda(cenario_b.carga_bruta)}",
-        showarrow=True, arrowhead=2, ax=40, ay=-18,
-        font=dict(color=CORES["escuro"], size=12),
+        showarrow=False,
+        xanchor="left",
+        xshift=8,
+        font=dict(size=12, color="#373435"),
     )
     if credito_valor > 0:
-        # ay=18 (não 0) — separa verticalmente da anotação de Total da
-        # linha IVA, que aponta para o mesmo x (fim da barra).
+        # ay=18 — desloca para baixo da anotação de Total da linha IVA,
+        # que fica ancorada sem seta na mesma altura da barra.
         fig.add_annotation(
             x=float(cenario_b.carga_bruta),
             y="IVA",
@@ -212,6 +207,7 @@ def grafico_barra_comparativo(resultado: ResultadoAnalise) -> go.Figure:
         height=320,
     )
     fig.update_layout(**TEMPLATE_GUERRA["layout"])
+    fig.update_layout(margin=dict(r=220))
     return fig
 
 

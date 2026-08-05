@@ -684,14 +684,14 @@ if fonte == "manual":
                 LABELS_PT.get(k, k.replace("_", " ").title()): fmt_moeda(v)
                 for k, v in cenario_a.detalhes.items() if isinstance(v, Decimal)
             }
-            st.table(detalhes_a)
+            st.table({"Valor": detalhes_a})
 
             st.markdown(f"**Cenário B — {cenario_b.nome}**")
             detalhes_b = {
                 LABELS_PT.get(k, k.replace("_", " ").title()): fmt_moeda(v)
                 for k, v in cenario_b.detalhes.items() if isinstance(v, Decimal)
             }
-            st.table(detalhes_b)
+            st.table({"Valor": detalhes_b})
 
 # ------------------------------------------------------------------
 # Fluxo PGDAS-D — Área principal
@@ -890,14 +890,14 @@ elif fonte == "pgdas":
                 for k, v in cenario_a.detalhes.items()
                 if isinstance(v, Decimal)
             }
-            st.table(detalhes_a)
+            st.table({"Valor": detalhes_a})
             st.markdown(f"**Cenário B — {cenario_b.nome}**")
             detalhes_b = {
                 LABELS_PT.get(k, k.replace("_", " ").title()): fmt_moeda(v)
                 for k, v in cenario_b.detalhes.items()
                 if isinstance(v, Decimal)
             }
-            st.table(detalhes_b)
+            st.table({"Valor": detalhes_b})
 
 # ------------------------------------------------------------------
 # Instrução inicial — nada analisado ainda nesta sessão
