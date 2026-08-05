@@ -186,35 +186,49 @@ def _calcular_por_dentro_fora(faturamento: Decimal, aliquota: Decimal) -> dict:
 st.markdown(
     """
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+    :root {
+      --teal-principal: #00B2A9;
+      --teal-escuro: #007F78;
+      --escuro: #2C2C2C;
+      --cinza: #6B7280;
+      --fundo-app: #FAFAF9;
+      --fundo-card: #FFFFFF;
+      --fonte-display: 'Space Grotesk', sans-serif;
+      --fonte-corpo: 'Inter', sans-serif;
+      --fonte-numerica: 'IBM Plex Mono', monospace;
+    }
+
     /* Base */
-    .stApp { background-color: #FFFFFF; color: #1A1A1A; }
+    .stApp { background-color: var(--fundo-app); color: var(--escuro); font-family: var(--fonte-corpo); }
 
     /* Sidebar */
-    [data-testid="stSidebar"] { background-color: #1A1A1A !important; }
+    [data-testid="stSidebar"] { background-color: var(--escuro) !important; }
     [data-testid="stSidebar"] label { color: #FFFFFF !important; }
     [data-testid="stSidebar"] p { color: #FFFFFF !important; }
     [data-testid="stSidebar"] .stRadio label { color: #FFFFFF !important; }
     [data-testid="stSidebar"] .stSlider label { color: #FFFFFF !important; }
     [data-testid="stSidebar"] h1,
     [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3 { color: #2E8B57 !important; }
+    [data-testid="stSidebar"] h3 { color: var(--teal-principal) !important; font-family: var(--fonte-display); }
 
     /* Inputs sidebar */
     [data-testid="stSidebar"] input {
         background-color: #2A2A2A !important;
         color: #FFFFFF !important;
-        border: 1px solid #2E8B57 !important;
+        border: 1px solid var(--teal-principal) !important;
         border-radius: 4px !important;
     }
     [data-testid="stSidebar"] .stSelectbox > div > div {
         background-color: #2A2A2A !important;
         color: #FFFFFF !important;
-        border: 1px solid #2E8B57 !important;
+        border: 1px solid var(--teal-principal) !important;
     }
 
     /* Botões */
     .stButton > button {
-        background-color: #2E8B57 !important;
+        background-color: var(--teal-principal) !important;
         color: #FFFFFF !important;
         border: none !important;
         border-radius: 6px !important;
@@ -224,11 +238,11 @@ st.markdown(
         font-size: 1rem !important;
         transition: background-color 0.2s !important;
     }
-    .stButton > button:hover { background-color: #236B43 !important; }
+    .stButton > button:hover { background-color: var(--teal-escuro) !important; }
 
     /* Cards */
     .card-migrar {
-        background-color: #2E8B57;
+        background-color: var(--teal-principal);
         color: white;
         padding: 1.5rem 2rem;
         border-radius: 10px;
@@ -236,10 +250,11 @@ st.markdown(
         font-size: 1.6rem;
         font-weight: 700;
         margin: 1rem 0;
+        font-family: var(--fonte-display);
         box-shadow: 0 4px 12px rgba(46,139,87,0.3);
     }
     .card-manter {
-        background-color: #1A1A1A;
+        background-color: var(--escuro);
         color: white;
         padding: 1.5rem 2rem;
         border-radius: 10px;
@@ -247,6 +262,7 @@ st.markdown(
         font-size: 1.6rem;
         font-weight: 700;
         margin: 1rem 0;
+        font-family: var(--fonte-display);
         box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
     .card-dentro {
@@ -256,7 +272,7 @@ st.markdown(
         text-align: center;
     }
     .card-dentro.vantajoso {
-        border: 2px solid #2E8B57;
+        border: 2px solid var(--teal-principal);
         background-color: #F0FFF4;
     }
     .card-fora {
@@ -266,54 +282,56 @@ st.markdown(
         text-align: center;
     }
     .card-fora.vantajoso {
-        border: 2px solid #2E8B57;
+        border: 2px solid var(--teal-principal);
         background-color: #F0FFF4;
     }
 
     /* Narrativa */
     .narrativa-box {
-        border: 1.5px solid #2E8B57;
+        border: 1.5px solid var(--teal-principal);
         border-radius: 8px;
         padding: 1.2rem 1.5rem;
         background-color: #F9F9F9;
         font-size: 0.95rem;
         line-height: 1.7;
-        color: #1A1A1A;
+        color: var(--escuro);
     }
 
     /* Métricas */
     [data-testid="stMetricValue"] {
         font-size: 1.5rem !important;
         font-weight: 700 !important;
+        font-family: var(--fonte-numerica);
     }
     [data-testid="stMetricLabel"] {
         font-size: 0.85rem !important;
-        color: #666666 !important;
+        color: var(--cinza) !important;
     }
 
     /* Título principal */
     .titulo-app {
-        color: #2E8B57;
+        color: var(--teal-principal);
         font-size: 2.5rem;
         font-weight: 800;
         text-align: center;
         margin-bottom: 0.2rem;
+        font-family: var(--fonte-display);
     }
     .subtitulo-app {
-        color: #666666;
+        color: var(--cinza);
         font-size: 1rem;
         text-align: center;
         margin-bottom: 1.5rem;
     }
     .instrucao-box {
-        border: 1.5px solid #2E8B57;
+        border: 1.5px solid var(--teal-principal);
         border-radius: 8px;
         padding: 1rem 1.5rem;
-        color: #1A1A1A;
+        color: var(--escuro);
         background-color: #FFFFFF;
     }
 
-    hr { border-color: #2E8B57 !important; }
+    hr { border-color: var(--teal-principal) !important; }
     </style>
     """,
     unsafe_allow_html=True,
