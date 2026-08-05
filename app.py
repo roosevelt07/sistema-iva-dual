@@ -204,7 +204,7 @@ st.markdown(
     .stApp { background-color: var(--fundo-app); color: var(--escuro); font-family: var(--fonte-corpo); }
 
     /* Sidebar */
-    [data-testid="stSidebar"] { background-color: var(--escuro) !important; }
+    [data-testid="stSidebar"] { background: linear-gradient(180deg, var(--escuro) 0%, #1F1F1F 100%) !important; }
     [data-testid="stSidebar"] label { color: #FFFFFF !important; }
     [data-testid="stSidebar"] p { color: #FFFFFF !important; }
     [data-testid="stSidebar"] .stRadio label { color: #FFFFFF !important; }
@@ -236,6 +236,8 @@ st.markdown(
         width: 100% !important;
         padding: 0.75rem !important;
         font-size: 1rem !important;
+        letter-spacing: 0.01em !important;
+        box-shadow: 0 2px 8px rgba(0,178,169,0.25) !important;
         transition: background-color 0.2s !important;
     }
     .stButton > button:hover { background-color: var(--teal-escuro) !important; }
@@ -245,26 +247,30 @@ st.markdown(
         background-color: var(--teal-principal);
         color: white;
         padding: 1.5rem 2rem;
-        border-radius: 10px;
+        border-radius: 12px;
         text-align: center;
         font-size: 1.6rem;
         font-weight: 700;
         margin: 1rem 0;
         font-family: var(--fonte-display);
-        box-shadow: 0 4px 12px rgba(46,139,87,0.3);
+        box-shadow: 0 8px 24px rgba(0,178,169,0.18);
+        transition: transform 0.15s;
     }
+    .card-migrar:hover { transform: translateY(-2px); }
     .card-manter {
         background-color: var(--escuro);
         color: white;
         padding: 1.5rem 2rem;
-        border-radius: 10px;
+        border-radius: 12px;
         text-align: center;
         font-size: 1.6rem;
         font-weight: 700;
         margin: 1rem 0;
         font-family: var(--fonte-display);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        box-shadow: 0 8px 24px rgba(0,178,169,0.18);
+        transition: transform 0.15s;
     }
+    .card-manter:hover { transform: translateY(-2px); }
     .card-dentro {
         border: 2px solid #cccccc;
         border-radius: 8px;
@@ -273,7 +279,8 @@ st.markdown(
     }
     .card-dentro.vantajoso {
         border: 2px solid var(--teal-principal);
-        background-color: #F0FFF4;
+        background-color: rgba(0,178,169,0.06);
+        box-shadow: 0 2px 8px rgba(0,178,169,0.12);
     }
     .card-fora {
         border: 2px solid #cccccc;
@@ -283,13 +290,14 @@ st.markdown(
     }
     .card-fora.vantajoso {
         border: 2px solid var(--teal-principal);
-        background-color: #F0FFF4;
+        background-color: rgba(0,178,169,0.06);
+        box-shadow: 0 2px 8px rgba(0,178,169,0.12);
     }
 
     /* Narrativa */
     .narrativa-box {
-        border: 1.5px solid var(--teal-principal);
-        border-radius: 8px;
+        border-left: 4px solid var(--teal-principal);
+        border-radius: 0 8px 8px 0;
         padding: 1.2rem 1.5rem;
         background-color: #F9F9F9;
         font-size: 0.95rem;
@@ -299,8 +307,9 @@ st.markdown(
 
     /* Métricas */
     [data-testid="stMetricValue"] {
-        font-size: 1.5rem !important;
+        font-size: 1.75rem !important;
         font-weight: 700 !important;
+        letter-spacing: -0.02em !important;
         font-family: var(--fonte-numerica);
     }
     [data-testid="stMetricLabel"] {
