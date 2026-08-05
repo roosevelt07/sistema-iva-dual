@@ -1,3 +1,4 @@
+import base64
 import os
 import re
 import sys
@@ -558,14 +559,24 @@ elif tipo_entrada == "Upload PGDAS-D" and processar_pgdas:
 # ---------------------------------------------------------------------------
 # Área principal
 # ---------------------------------------------------------------------------
-col_logo, col_titulo = st.columns([1, 4])
-with col_logo:
-    if LOGO_PATH.exists():
-        st.image(str(LOGO_PATH), width=80)
-with col_titulo:
+if LOGO_PATH.exists():
+    logo_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
+    st.markdown(
+        f"""
+        <div style="text-align:center; margin-bottom:0.5rem;">
+            <img src="data:image/png;base64,{logo_b64}" width="80"
+                 style="display:inline-block; margin-bottom:0.5rem;">
+            <h1 class="titulo-app" style="margin:0;">Analisador IVA</h1>
+            <p class="subtitulo-app" style="margin:0;">Simulação IBS/CBS — LC 214/2025</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
     st.markdown('<h1 class="titulo-app">Analisador IVA</h1>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="subtitulo-app">Simulação IBS/CBS — LC 214/2025</p>', unsafe_allow_html=True
+        '<p class="subtitulo-app">Simulação IBS/CBS — LC 214/2025</p>',
+        unsafe_allow_html=True,
     )
 
 st.divider()
