@@ -17,16 +17,28 @@ from src.analise.formatters import fmt_moeda
 from src.analise.formulario import ContextoCalculo
 
 CORES = {
-    "verde": "#2E8B57",
-    "verde_claro": "#52C27A",
-    "verde_escuro": "#1A5C38",
-    "preto": "#1A1A1A",
+    "teal": "#00B2A9",
+    "teal_escuro": "#007F78",
+    "teal_claro": "#B8E5E2",
+    "escuro": "#2C2C2C",
     "cinza_escuro": "#444444",
-    "cinza_medio": "#888888",
+    "cinza_medio": "#6B7280",
     "cinza_claro": "#CCCCCC",
     "branco": "#FFFFFF",
     "vermelho": "#C0392B",
     "amarelo": "#F1C40F",  # não veio na paleta fornecida — completado para o gauge
+    "verde_status": "#2E8B57",  # só semântica de risco no gauge — não é cor de marca
+}
+
+TEMPLATE_GUERRA = {
+    "layout": {
+        "colorway": ["#00B2A9", "#007F78", "#2C2C2C", "#6B7280", "#B8E5E2"],
+        "font": {"family": "Inter, sans-serif", "color": "#2C2C2C"},
+        # transparente, não sólido — mistura com o fundo var(--fundo-app)
+        # do app (#FAFAF9), em vez de aparecer como um retângulo branco.
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "rgba(0,0,0,0)",
+    }
 }
 
 LAYOUT_BASE = dict(
@@ -62,7 +74,7 @@ def grafico_pizzas_comparativo(resultado: ResultadoAnalise) -> go.Figure:
         if chave in _ROTULOS_CENARIO_A and isinstance(valor, Decimal) and valor > 0:
             labels_a.append(_ROTULOS_CENARIO_A[chave])
             valores_a.append(float(valor))
-    cores_a = [CORES["preto"], CORES["cinza_escuro"], CORES["cinza_medio"], CORES["cinza_claro"]]
+    cores_a = [CORES["escuro"], CORES["cinza_escuro"], CORES["cinza_medio"], CORES["cinza_claro"]]
 
     cbs_valor = cenario_b.detalhes.get("cbs_novo")
     ibs_valor = cenario_b.detalhes.get("ibs_novo")
@@ -71,9 +83,9 @@ def grafico_pizzas_comparativo(resultado: ResultadoAnalise) -> go.Figure:
         ibs_valor = cenario_b.carga_bruta * (ctx.ibs_efetiva / ctx.ibs_cbs_total)
 
     pares_b = [
-        ("CBS", cbs_valor, CORES["verde_escuro"]),
-        ("IBS", ibs_valor, CORES["verde"]),
-        ("Crédito aproveitado", cenario_b.credito_aproveitado, CORES["verde_claro"]),
+        ("CBS", cbs_valor, CORES["teal_escuro"]),
+        ("IBS", ibs_valor, CORES["teal"]),
+        ("Crédito aproveitado", cenario_b.credito_aproveitado, CORES["teal_claro"]),
     ]
     labels_b, valores_b, cores_b = [], [], []
     for nome, valor, cor in pares_b:
@@ -108,6 +120,7 @@ def grafico_pizzas_comparativo(resultado: ResultadoAnalise) -> go.Figure:
         row=1, col=2,
     )
     fig.update_layout(**LAYOUT_BASE, height=340, showlegend=True)
+    fig.update_layout(**TEMPLATE_GUERRA["layout"])
     return fig
 
 
@@ -119,14 +132,22 @@ def grafico_barra_comparativo(resultado: ResultadoAnalise) -> go.Figure:
 
     fig = go.Figure()
 
+    # Rótulos de segmento ficam DENTRO da barra (não "outside") — numa
+    # barra empilhada, "outside" ancora o texto na borda daquele
+    # segmento específico, e segmentos vizinhos/estreitos colidem entre
+    # si. `constraintext="both"` esconde automaticamente o texto que não
+    # cabe num segmento estreito, em vez de deixá-lo vazar por cima do
+    # vizinho.
     for chave, valor in cenario_a.detalhes.items():
         if chave in _ROTULOS_CENARIO_A and isinstance(valor, Decimal) and valor > 0:
             fig.add_trace(
                 go.Bar(
                     name=f"Atual — {_ROTULOS_CENARIO_A[chave]}",
                     y=["Atual"], x=[float(valor)], orientation="h",
-                    marker=dict(color=CORES["preto"]),
-                    text=[fmt_moeda(valor)], textposition="outside",
+                    marker=dict(color=CORES["escuro"]),
+                    text=[fmt_moeda(valor)], textposition="inside",
+                    insidetextfont=dict(color=CORES["branco"], size=11),
+                    constraintext="both",
                 )
             )
 
@@ -137,26 +158,47 @@ def grafico_barra_comparativo(resultado: ResultadoAnalise) -> go.Figure:
     fig.add_trace(
         go.Bar(
             name="IVA — CBS", y=["IVA"], x=[float(cbs_valor)], orientation="h",
-            marker=dict(color=CORES["verde_escuro"]),
-            text=[fmt_moeda(cbs_valor)], textposition="outside",
+            marker=dict(color=CORES["teal_escuro"]),
+            text=[fmt_moeda(cbs_valor)], textposition="inside",
+            insidetextfont=dict(color=CORES["branco"], size=11),
+            constraintext="both",
         )
     )
     fig.add_trace(
         go.Bar(
             name="IVA — IBS", y=["IVA"], x=[float(ibs_valor)], orientation="h",
-            marker=dict(color=CORES["verde"]),
-            text=[fmt_moeda(ibs_valor)], textposition="outside",
+            marker=dict(color=CORES["teal"]),
+            text=[fmt_moeda(ibs_valor)], textposition="inside",
+            insidetextfont=dict(color=CORES["branco"], size=11),
+            constraintext="both",
         )
     )
+
+    # Totais por linha — anotação dedicada fora da barra, em vez de
+    # disputar espaço com os rótulos de segmento na borda.
+    fig.add_annotation(
+        x=float(cenario_a.carga_bruta), y="Atual",
+        text=f"Total: {fmt_moeda(cenario_a.carga_bruta)}",
+        showarrow=True, arrowhead=2, ax=40, ay=0,
+        font=dict(color=CORES["escuro"], size=12),
+    )
+    fig.add_annotation(
+        x=float(cenario_b.carga_bruta), y="IVA",
+        text=f"Total: {fmt_moeda(cenario_b.carga_bruta)}",
+        showarrow=True, arrowhead=2, ax=40, ay=-18,
+        font=dict(color=CORES["escuro"], size=12),
+    )
     if credito_valor > 0:
+        # ay=18 (não 0) — separa verticalmente da anotação de Total da
+        # linha IVA, que aponta para o mesmo x (fim da barra).
         fig.add_annotation(
             x=float(cenario_b.carga_bruta),
             y="IVA",
             text=f"Crédito deduzido: {fmt_moeda(credito_valor)}",
             showarrow=True,
             arrowhead=2,
-            ax=40, ay=0,
-            font=dict(color=CORES["verde_escuro"], size=12),
+            ax=40, ay=18,
+            font=dict(color=CORES["teal_escuro"], size=12),
         )
 
     menor = min(float(cenario_a.carga_liquida), float(cenario_b.carga_liquida))
@@ -169,6 +211,7 @@ def grafico_barra_comparativo(resultado: ResultadoAnalise) -> go.Figure:
         xaxis_title="R$",
         height=320,
     )
+    fig.update_layout(**TEMPLATE_GUERRA["layout"])
     return fig
 
 
@@ -179,8 +222,10 @@ def grafico_gauge_aliquota(resultado: ResultadoAnalise) -> go.Figure:
     aliquota_atual = float(cenario_a.aliquota_efetiva * 100)
     aliquota_iva = float(cenario_b.aliquota_efetiva * 100)
 
+    # Cores de status (risco), não de marca — teal nunca entra aqui, só
+    # verde/amarelo/vermelho semânticos (ok/atenção/risco).
     steps = [
-        {"range": [0, 15], "color": CORES["verde"]},
+        {"range": [0, 15], "color": CORES["verde_status"]},
         {"range": [15, 20], "color": CORES["amarelo"]},
         {"range": [20, 30], "color": CORES["vermelho"]},
     ]
@@ -194,7 +239,7 @@ def grafico_gauge_aliquota(resultado: ResultadoAnalise) -> go.Figure:
             number=dict(suffix="%", valueformat=".2f"),
             title=dict(text="Carga Atual"),
             gauge=dict(
-                axis=dict(range=[0, 30]), bar=dict(color=CORES["preto"]),
+                axis=dict(range=[0, 30]), bar=dict(color=CORES["escuro"]),
                 steps=steps, threshold=threshold,
             ),
         ),
@@ -207,28 +252,29 @@ def grafico_gauge_aliquota(resultado: ResultadoAnalise) -> go.Figure:
             number=dict(suffix="%", valueformat=".2f"),
             delta=dict(
                 reference=aliquota_atual, valueformat=".2f", suffix="%",
-                decreasing=dict(color=CORES["verde"]), increasing=dict(color=CORES["vermelho"]),
+                decreasing=dict(color=CORES["verde_status"]), increasing=dict(color=CORES["vermelho"]),
             ),
             title=dict(text="Carga IVA Regular"),
             gauge=dict(
-                axis=dict(range=[0, 30]), bar=dict(color=CORES["verde"]),
+                axis=dict(range=[0, 30]), bar=dict(color=CORES["verde_status"]),
                 steps=steps, threshold=threshold,
             ),
         ),
         row=1, col=2,
     )
     fig.update_layout(**LAYOUT_BASE, height=280)
+    fig.update_layout(**TEMPLATE_GUERRA["layout"])
     return fig
 
 
 def grafico_pizza_atual(carga: Dict[str, Decimal]) -> go.Figure:
     """Donut único com PIS, COFINS, ICMS, ISS, IPI (Modo Sistema Atual)."""
     cores_tributos = {
-        "PIS": "#444444",
-        "COFINS": "#666666",
-        "ICMS": "#1A1A1A",
-        "ISS": "#888888",
-        "IPI": "#2E8B57",
+        "PIS": CORES["cinza_escuro"],
+        "COFINS": CORES["cinza_medio"],
+        "ICMS": CORES["escuro"],
+        "ISS": CORES["cinza_claro"],
+        "IPI": CORES["teal"],
     }
 
     labels, valores, cores = [], [], []
@@ -247,6 +293,7 @@ def grafico_pizza_atual(carga: Dict[str, Decimal]) -> go.Figure:
         )
     )
     fig.update_layout(**LAYOUT_BASE, title="Composição da carga tributária atual", height=340)
+    fig.update_layout(**TEMPLATE_GUERRA["layout"])
     return fig
 
 
@@ -273,13 +320,13 @@ def grafico_evolucao_transicao(ctx: ContextoCalculo) -> go.Figure:
     fig.add_trace(
         go.Scatter(
             x=anos, y=carga_atual_pct, mode="lines+markers", name="Carga Atual",
-            line=dict(color=CORES["preto"], width=2),
+            line=dict(color=CORES["escuro"], width=2),
         )
     )
     fig.add_trace(
         go.Scatter(
             x=anos, y=carga_iva_pct, mode="lines+markers", name="Carga IVA",
-            line=dict(color=CORES["verde"], width=2),
+            line=dict(color=CORES["teal"], width=2),
         )
     )
 
@@ -296,7 +343,7 @@ def grafico_evolucao_transicao(ctx: ContextoCalculo) -> go.Figure:
         fig.add_trace(
             go.Scatter(
                 x=anos_pos, y=iva_pos, mode="lines", line=dict(width=0),
-                fill="tonexty", fillcolor="rgba(46,139,87,0.2)",
+                fill="tonexty", fillcolor="rgba(0,178,169,0.2)",
                 showlegend=False, hoverinfo="skip",
             )
         )
@@ -312,6 +359,7 @@ def grafico_evolucao_transicao(ctx: ContextoCalculo) -> go.Figure:
         xaxis=dict(title="Ano", dtick=1),
         height=340,
     )
+    fig.update_layout(**TEMPLATE_GUERRA["layout"])
     return fig
 
 
@@ -321,8 +369,8 @@ def grafico_dentro_fora(resultado_df: dict) -> go.Figure:
     fora = resultado_df["fora"]["tributo"]
     vantajoso = resultado_df["vantajoso"]
 
-    cor_dentro = CORES["verde_escuro"] if vantajoso == "dentro" else CORES["cinza_claro"]
-    cor_fora = CORES["verde_escuro"] if vantajoso == "fora" else CORES["cinza_claro"]
+    cor_dentro = CORES["teal_escuro"] if vantajoso == "dentro" else CORES["cinza_claro"]
+    cor_fora = CORES["teal_escuro"] if vantajoso == "fora" else CORES["cinza_claro"]
 
     fig = go.Figure(
         go.Bar(
@@ -353,4 +401,5 @@ def grafico_dentro_fora(resultado_df: dict) -> go.Figure:
         yaxis_title="R$",
         height=340,
     )
+    fig.update_layout(**TEMPLATE_GUERRA["layout"])
     return fig
